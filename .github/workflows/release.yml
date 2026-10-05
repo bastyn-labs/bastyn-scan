@@ -260,7 +260,7 @@ jobs:
           ref: ${{ inputs.tag || github.ref }}
       - name: Install Homebrew
         if: runner.os == 'Linux'
-        uses: Homebrew/actions/setup-homebrew@2026.09.13.1
+        uses: Homebrew/actions/setup-homebrew@2026.09.28.1
       - name: Download release checksum files
         env:
           GH_TOKEN: ${{ github.token }}
