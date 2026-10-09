@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **An agent skill for `bastyn scan`.** `skills/bastyn-scan/SKILL.md` teaches a coding agent how to run a scan, read the exit codes, tell defects from observations, and report coverage gaps. It installs with `npx skills add BASTYN-labs/bastyn-scan`.
+
 ## [0.3.0] - 2026-10-09
 
 ### Added
