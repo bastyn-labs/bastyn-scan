@@ -271,11 +271,19 @@ With no connection, Bastyn skips CVEs and says so under "Coverage gaps", with th
   },
   "cve": { "status": "checked", "dependencies": 3 },
   "findings": [ ... ],
+  "coverage": {
+    "mcp_manifests": [".mcp.json"],
+    "skill_files": [],
+    "instruction_files": ["AGENTS.md"],
+    "skipped": []
+  },
   "crosswalks": [ ... ]
 }
 ```
 
 `observations` is `1` where the text report said "1 observation hidden": the count is of what the scan found, not of what was printed. `findings` carries observations only under `--show-observations`. A `skipped` array appears alongside them when the scan skipped anything, and is omitted entirely when it did not, so an empty array can never be mistaken for "nothing was checked". Field names are a contract: fields may be added, existing fields keep their names and meanings.
+
+`coverage` says which agent files the scan read, by kind, with paths relative to the scanned root. `mcp_manifests` lists the MCP configuration files that were read and parsed. A config that fails to parse is not listed there; it is reported as a `BAS-MCP-000` finding instead. `skill_files` lists the `SKILL.md` files that were read, and `instruction_files` lists the other instruction files, such as `AGENTS.md`. A file appears under one kind only, so an MCP config is not repeated in `instruction_files`. All four keys are always present, and an empty `mcp_manifests` means no MCP configuration was parsed. `coverage.skipped` is the `skipped` array with the reason as a field (`excluded`, `ignore_file`, `generated`, `unreadable`, `unparseable`, `unpinned`), in the same order, and it carries a `detail` string when there is one. `skipped` itself is unchanged.
 
 `--format sarif` emits SARIF 2.1.0 for GitHub Advanced Security and GitLab. Observations always map to `note` level, so a context-dependent observation can never block a pull request.
 

@@ -36,7 +36,7 @@ pub use compliance::{Control, Crosswalk, Framework, Group, crosswalk};
 pub use error::{Error, Result};
 pub use finding::{Confidence, Finding, Kind, Location, Severity};
 pub use observe::{Observer, Phase, Silent};
-pub use report::{CveStatus, Report, Summary};
+pub use report::{Coverage, CoveredSkip, CveStatus, Report, Summary};
 pub use scan::{ScanOptions, scan, scan_observed};
 pub use walk::{Traversal, WalkOptions, collect_files};
 

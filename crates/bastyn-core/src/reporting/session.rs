@@ -198,6 +198,7 @@ mod tests {
             cve: CveStatus::NoManifest,
             findings: Vec::new(),
             skipped: Vec::new(),
+            coverage: crate::report::Coverage::default(),
             crosswalks: Vec::new(),
         }
     }

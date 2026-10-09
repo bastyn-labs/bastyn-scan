@@ -575,6 +575,7 @@ mod tests {
             cve,
             findings,
             skipped,
+            coverage: crate::report::Coverage::default(),
             crosswalks: Vec::new(),
         }
     }

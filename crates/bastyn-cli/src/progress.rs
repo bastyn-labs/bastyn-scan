@@ -870,6 +870,7 @@ mod tests {
             cve: CveStatus::SkippedOffline,
             findings,
             skipped: Vec::new(),
+            coverage: bastyn_core::Coverage::default(),
             crosswalks: Vec::new(),
         }
     }

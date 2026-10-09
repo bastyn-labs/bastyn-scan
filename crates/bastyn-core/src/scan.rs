@@ -18,7 +18,7 @@ use crate::infra;
 use crate::instructions;
 use crate::mcp;
 use crate::observe::{Observer, Phase, Silent};
-use crate::report::{CveStatus, Report, Skip, Summary};
+use crate::report::{Coverage, CoveredSkip, CveStatus, Report, Skip, Summary};
 use crate::rules::{RuleSet, ScanOutcome, SourceLanguage, scan_source_checked};
 use crate::skill;
 use crate::walk::{WalkOptions, collect_files};
@@ -138,6 +138,10 @@ pub fn scan_observed(
         },
         cve: cve_status,
         findings,
+        coverage: Coverage {
+            skipped: analysis.skipped.iter().map(CoveredSkip::from).collect(),
+            ..analysis.coverage
+        },
         skipped: analysis.skipped.into_iter().collect(),
         // Grouping is a presentation choice the caller makes, not a fact the
         // scan discovers, so the engine never fills this in. A caller that
@@ -199,6 +203,16 @@ struct Analysis {
     /// Everything the scan could not cover, ordered so the report is stable.
     skipped: BTreeSet<Skip>,
     scanned: usize,
+    /// The paths covered per agent-file kind, in file order.
+    coverage: Coverage,
+}
+
+/// The agent-file kinds one file was successfully read as.
+#[derive(Debug, Default, Clone, Copy)]
+struct Covered {
+    mcp_manifest: bool,
+    skill_file: bool,
+    instruction_file: bool,
 }
 
 /// What one file's analysers produced, before it is folded into the whole
@@ -215,6 +229,11 @@ struct FileAnalysis {
     dependencies: Vec<Dependency>,
     unresolved_dependencies: Vec<UnresolvedDependency>,
     skipped: Vec<Skip>,
+    /// Which agent-file kinds this file was read as, for [`Report::coverage`].
+    covered: Covered,
+    /// The display path to list under each kind in `covered`; `None` when the
+    /// file was not read.
+    covered_path: Option<String>,
     /// Whether an analyser actually covered this file, for
     /// [`Summary::files_scanned`].
     scanned: bool,
@@ -283,6 +302,17 @@ fn analyse(
             .extend(file.unresolved_dependencies);
         out.skipped.extend(file.skipped);
         out.scanned += usize::from(file.scanned);
+        if let Some(path) = file.covered_path {
+            if file.covered.mcp_manifest {
+                out.coverage.mcp_manifests.push(path.clone());
+            }
+            if file.covered.skill_file {
+                out.coverage.skill_files.push(path.clone());
+            }
+            if file.covered.instruction_file {
+                out.coverage.instruction_files.push(path);
+            }
+        }
     }
 }
 
@@ -405,10 +435,11 @@ fn analyse_file(root: &Path, relative: &Path, ruleset: &RuleSet) -> Option<FileA
         out.dependencies
             .extend(mcp::server_dependencies(relative, &contents));
 
-        match mcp::inspect(relative, &contents) {
-            Ok(found) => out.findings.extend(found),
-            Err(_) => out.skipped.push(Skip::unparseable(display_path(relative))),
-        }
+        // A config that read but did not parse is not listed as covered: it
+        // already produces the `BAS-MCP-000` defect.
+        let (found, parsed) = mcp::inspect_config(relative, &contents);
+        out.findings.extend(found);
+        out.covered.mcp_manifest = parsed;
     }
 
     if infra_file {
@@ -420,6 +451,12 @@ fn analyse_file(root: &Path, relative: &Path, ruleset: &RuleSet) -> Option<FileA
             Err(_) => out.skipped.push(Skip::unparseable(display_path(relative))),
         }
     }
+
+    out.covered_path = Some(display_path(relative));
+    out.covered.skill_file = skill_file;
+    // An MCP config and a `SKILL.md` are also instruction files internally,
+    // but each is listed only under its own kind, never twice.
+    out.covered.instruction_file = instruction_file && !mcp_config && !skill_file;
 
     if instruction_file {
         // An agent instruction file (or an MCP config, which can inline
@@ -779,6 +816,94 @@ mod tests {
             report.skipped
         );
         assert_eq!(report.summary.files_scanned, 1);
+    }
+
+    /// The three coverage lists name what was read, each file once, and
+    /// `coverage.skipped` is `skipped` with the reason as data.
+    #[test]
+    fn coverage_lists_the_agent_files_that_were_read_and_parsed() {
+        let mut bundle = String::from("!function(e,t){");
+        bundle.push_str(&"return e.n(t),".repeat(4000));
+        bundle.push_str("}();\n");
+
+        let dir = tree(&[
+            (".mcp.json", r#"{"mcpServers":{}}"#),
+            ("sub/mcp.json", "{ this is not json"),
+            (
+                "skills/x/SKILL.md",
+                "---\nname: x\ndescription: does x\n---\nBody.\n",
+            ),
+            ("AGENTS.md", "# Agents\nBe careful.\n"),
+            ("web/bundle.js", &bundle),
+            ("broken.py", "def(:::: not python at all @#$%^&*(\0\0\0"),
+        ]);
+
+        let report = scan(dir.path(), &offline()).unwrap();
+        let coverage = &report.coverage;
+
+        assert_eq!(coverage.mcp_manifests, [".mcp.json"]);
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.rule_id == "BAS-MCP-000"
+                    && display_path(&f.location.file) == "sub/mcp.json"),
+            "the malformed config must still be reported: {:#?}",
+            report.findings
+        );
+        assert_eq!(coverage.skill_files, ["skills/x/SKILL.md"]);
+        assert_eq!(coverage.instruction_files, ["AGENTS.md"]);
+
+        assert_eq!(coverage.skipped.len(), report.skipped.len());
+        for (structured, line) in coverage.skipped.iter().zip(&report.skipped) {
+            assert_eq!(structured.path, line.path);
+            assert_eq!(structured.reason, line.reason);
+        }
+        let reasons: Vec<(&str, SkipReason)> = coverage
+            .skipped
+            .iter()
+            .map(|skip| (skip.path.as_str(), skip.reason))
+            .collect();
+        assert_eq!(reasons.len(), 2, "{reasons:?}");
+        assert!(reasons.contains(&("web/bundle.js", SkipReason::Generated)));
+        assert!(reasons.contains(&("broken.py", SkipReason::Unparseable)));
+        let generated = coverage
+            .skipped
+            .iter()
+            .find(|skip| skip.reason == SkipReason::Generated)
+            .unwrap();
+        assert!(!generated.detail.is_empty(), "{generated:?}");
+    }
+
+    /// A config the caller excluded was not read, so it is a skip and not
+    /// coverage.
+    #[test]
+    fn an_excluded_mcp_config_is_a_coverage_skip_and_not_a_manifest() {
+        let dir = tree(&[
+            (".mcp.json", r#"{"mcpServers":{}}"#),
+            ("vendor/mcp.json", r#"{"mcpServers":{}}"#),
+        ]);
+        let options = ScanOptions {
+            offline: true,
+            walk: WalkOptions {
+                excludes: vec!["vendor/".to_owned()],
+                ..WalkOptions::default()
+            },
+            ..ScanOptions::default()
+        };
+
+        let report = scan(dir.path(), &options).unwrap();
+
+        assert_eq!(report.coverage.mcp_manifests, [".mcp.json"]);
+        assert!(
+            report
+                .coverage
+                .skipped
+                .iter()
+                .any(|skip| skip.reason == SkipReason::Excluded && skip.path.starts_with("vendor/")),
+            "{:#?}",
+            report.coverage.skipped
+        );
     }
 
     /// `static/`, `assets/` and `public/` hold handwritten browser JavaScript

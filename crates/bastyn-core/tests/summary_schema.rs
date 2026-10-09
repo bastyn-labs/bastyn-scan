@@ -114,6 +114,7 @@ fn report(cve: CveStatus, skipped: Vec<Skip>, findings: Vec<Finding>) -> Report 
         cve,
         findings,
         skipped,
+        coverage: bastyn_core::Coverage::default(),
         crosswalks: Vec::new(),
     }
 }

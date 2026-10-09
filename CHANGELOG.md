@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`coverage` in the JSON report.** `bastyn scan --format json` now has a top-level `coverage` object listing the MCP configs that were read and parsed (`mcp_manifests`), the `SKILL.md` files (`skill_files`) and the other instruction files (`instruction_files`), plus `coverage.skipped`, the `skipped` array with each reason as a field. The existing `skipped` array is unchanged.
+
 ## [0.2.2] - 2026-10-02
 
 ### Changed

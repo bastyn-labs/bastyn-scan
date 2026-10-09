@@ -78,6 +78,7 @@ pub(crate) fn report_with(cve: CveStatus) -> Report {
         cve,
         findings: vec![defect(), observation()],
         skipped: Vec::new(),
+        coverage: crate::report::Coverage::default(),
         crosswalks: Vec::new(),
     }
 }
@@ -104,6 +105,7 @@ pub(crate) fn duplicate_rule_report() -> Report {
         cve: CveStatus::NoManifest,
         findings: vec![defect(), second, observation()],
         skipped: Vec::new(),
+        coverage: crate::report::Coverage::default(),
         crosswalks: Vec::new(),
     }
 }
@@ -217,6 +219,7 @@ pub(crate) fn layered_report() -> Report {
         cve: CveStatus::SkippedOffline,
         findings,
         skipped: Vec::new(),
+        coverage: crate::report::Coverage::default(),
         crosswalks: Vec::new(),
     }
 }
@@ -230,6 +233,7 @@ pub(crate) fn empty_report() -> Report {
         cve: CveStatus::NoManifest,
         findings: Vec::new(),
         skipped: Vec::new(),
+        coverage: crate::report::Coverage::default(),
         crosswalks: Vec::new(),
     }
 }
@@ -326,6 +330,7 @@ pub(crate) fn verbose_report() -> Report {
         },
         findings: vec![verbose_defect(), defect(), observation()],
         skipped: every_skip_reason(),
+        coverage: crate::report::Coverage::default(),
         crosswalks: Vec::new(),
     }
 }
@@ -369,6 +374,7 @@ pub(crate) fn worse_finding_in_the_later_file() -> Report {
         cve: CveStatus::SkippedOffline,
         findings: vec![high, critical],
         skipped: Vec::new(),
+        coverage: crate::report::Coverage::default(),
         crosswalks: Vec::new(),
     }
 }
