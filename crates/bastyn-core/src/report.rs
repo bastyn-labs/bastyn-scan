@@ -48,7 +48,8 @@ pub enum CveStatus {
 /// Ordered so the report lists the deliberate exclusions before the ones the
 /// scan hit by accident: a pattern the caller typed is a decision they can
 /// revisit, an unreadable file is not.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SkipReason {
     /// An `--exclude` pattern matched.
     Excluded,
@@ -118,6 +119,56 @@ impl SkipReason {
             Self::Unstated => {
                 "1 path was not covered, for a reason this report did not record:".into()
             }
+        }
+    }
+}
+
+/// Which agent files a scan covered, by kind, and what it skipped.
+///
+/// Every key is always serialised. An empty `mcp_manifests` says that no MCP
+/// configuration was parsed, which is information a consumer needs and cannot
+/// get from the absence of a key. Paths use forward slashes and are relative
+/// to the scanned root, in the order the scan walked them.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct Coverage {
+    /// MCP configuration files that were read and parsed. A config that was
+    /// read but did not parse is not listed here: it is reported as a
+    /// `BAS-MCP-000` finding instead.
+    #[serde(default)]
+    pub mcp_manifests: Vec<String>,
+    /// `SKILL.md` files that were read.
+    #[serde(default)]
+    pub skill_files: Vec<String>,
+    /// Agent instruction files (such as `AGENTS.md`) that were read. An MCP
+    /// configuration is listed only under `mcp_manifests`, and a `SKILL.md`
+    /// only under `skill_files`, never here.
+    #[serde(default)]
+    pub instruction_files: Vec<String>,
+    /// The structured form of [`Report::skipped`]: the same entries in the
+    /// same order, with the reason as data.
+    #[serde(default)]
+    pub skipped: Vec<CoveredSkip>,
+}
+
+/// The structured form of one [`Report::skipped`] line.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CoveredSkip {
+    /// What the entry is about, as in [`Skip::path`].
+    pub path: String,
+    /// Why the path is not covered.
+    pub reason: SkipReason,
+    /// The one thing that differs between entries sharing a reason, as in
+    /// [`Skip::detail`]. Omitted when empty.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub detail: String,
+}
+
+impl From<&Skip> for CoveredSkip {
+    fn from(skip: &Skip) -> Self {
+        Self {
+            path: skip.path.clone(),
+            reason: skip.reason,
+            detail: skip.detail.clone(),
         }
     }
 }
@@ -329,6 +380,15 @@ pub struct Report {
     /// claimed is a place a real finding hides.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skipped: Vec<Skip>,
+
+    /// The paths the scan covered, per kind of agent file, and the skipped
+    /// paths with their reasons as data.
+    ///
+    /// `coverage.skipped` is exactly [`Report::skipped`], in the same order,
+    /// with the reason as a field instead of prose. `skipped` itself is
+    /// unchanged because it is a published contract.
+    #[serde(default)]
+    pub coverage: Coverage,
 
     /// The findings regrouped by the areas of each compliance framework they
     /// are relevant to, one entry per framework.

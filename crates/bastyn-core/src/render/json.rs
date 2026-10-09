@@ -83,7 +83,13 @@ mod tests {
       "description": "No max_tokens ceiling is set on this call.",
       "remediation": "Set a token ceiling appropriate to the caller."
     }
-  ]
+  ],
+  "coverage": {
+    "mcp_manifests": [],
+    "skill_files": [],
+    "instruction_files": [],
+    "skipped": []
+  }
 }"#;
 
     #[test]
@@ -178,7 +184,11 @@ mod tests {
     /// as "nothing was left out" for a scan that never looked.
     #[test]
     fn an_empty_skipped_list_emits_no_key() {
-        assert!(!render(&empty_report()).unwrap().contains("\"skipped\""));
+        let value: serde_json::Value =
+            serde_json::from_str(&render(&empty_report()).unwrap()).unwrap();
+        assert!(value.get("skipped").is_none(), "{value}");
+        // `coverage.skipped` is a different key and is always present.
+        assert_eq!(value["coverage"]["skipped"], serde_json::json!([]));
     }
 
     /// A report carrying no crosswalk emits no key for one.
@@ -395,5 +405,64 @@ mod tests {
             value["cve"],
             serde_json::json!({"status": "partial", "dependencies": 9, "incomplete": 2})
         );
+    }
+
+    #[test]
+    fn coverage_skips_carry_the_reason_as_data() {
+        let mut report = report_with(CveStatus::NoManifest);
+        report.skipped = vec![
+            crate::report::Skip::generated(
+                "web/bundle.js".to_owned(),
+                "minified, 65536 bytes per line on average over the first 65536 bytes".to_owned(),
+            ),
+            crate::report::Skip::unparseable("broken.py".to_owned()),
+        ];
+        report.coverage.skipped = report
+            .skipped
+            .iter()
+            .map(crate::report::CoveredSkip::from)
+            .collect();
+
+        let value: serde_json::Value = serde_json::from_str(&render(&report).unwrap()).unwrap();
+        let skipped = value["coverage"]["skipped"].as_array().unwrap();
+
+        assert_eq!(skipped.len(), 2);
+        assert_eq!(skipped[0]["path"], "web/bundle.js");
+        assert_eq!(skipped[0]["reason"], "generated");
+        assert_ne!(skipped[0]["detail"].as_str().unwrap(), "");
+        assert_eq!(
+            skipped[1],
+            serde_json::json!({"path": "broken.py", "reason": "unparseable"})
+        );
+        // The published array is untouched by the structured one.
+        assert!(value["skipped"][1].is_string());
+    }
+
+    #[test]
+    fn every_skip_reason_serialises_in_snake_case() {
+        use crate::report::SkipReason;
+        let reasons = [
+            (SkipReason::Excluded, "excluded"),
+            (SkipReason::IgnoreFile, "ignore_file"),
+            (SkipReason::Generated, "generated"),
+            (SkipReason::Unreadable, "unreadable"),
+            (SkipReason::Unparseable, "unparseable"),
+            (SkipReason::Unpinned, "unpinned"),
+            (SkipReason::Unstated, "unstated"),
+        ];
+        for (reason, name) in reasons {
+            assert_eq!(serde_json::to_value(reason).unwrap(), name);
+        }
+    }
+
+    #[test]
+    fn a_report_without_a_coverage_key_still_deserialises() {
+        let older: serde_json::Value = serde_json::from_str(CONTRACT).unwrap();
+        let mut older = older;
+        older.as_object_mut().unwrap().remove("coverage");
+
+        let report: crate::report::Report = serde_json::from_value(older).unwrap();
+
+        assert_eq!(report.coverage, crate::report::Coverage::default());
     }
 }

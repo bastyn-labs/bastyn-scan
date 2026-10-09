@@ -185,6 +185,49 @@ fn the_crosswalk_is_additive_to_the_published_json_keys() {
     );
 }
 
+/// `coverage` is additive too: the published keys are unchanged beside it,
+/// and all four of its own keys are present even when empty.
+#[test]
+fn coverage_is_additive_and_always_has_its_four_keys() {
+    let dir = tree(&[("agents.py", VULNERABLE)]);
+
+    let report = json_scan(dir.path(), &[]);
+
+    let coverage = report["coverage"].as_object().unwrap();
+    for key in [
+        "mcp_manifests",
+        "skill_files",
+        "instruction_files",
+        "skipped",
+    ] {
+        assert_eq!(coverage[key], serde_json::json!([]), "{key}");
+    }
+}
+
+#[test]
+fn coverage_names_the_mcp_instruction_and_skill_files_that_were_read() {
+    let dir = tree(&[
+        (".mcp.json", r#"{"mcpServers":{}}"#),
+        ("AGENTS.md", "# Agents\nBe careful.\n"),
+        (
+            "skills/foo/SKILL.md",
+            "---\nname: foo\ndescription: does foo\n---\nBody.\n",
+        ),
+    ]);
+
+    let report = json_scan(dir.path(), &[]);
+
+    assert_eq!(
+        report["coverage"],
+        serde_json::json!({
+            "mcp_manifests": [".mcp.json"],
+            "skill_files": ["skills/foo/SKILL.md"],
+            "instruction_files": ["AGENTS.md"],
+            "skipped": [],
+        })
+    );
+}
+
 /// The terminal says what the grouping is not, in full, before it groups
 /// anything — in both forms.
 #[test]

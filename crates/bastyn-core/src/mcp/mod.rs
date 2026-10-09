@@ -72,14 +72,24 @@ pub fn is_mcp_config(path: &Path) -> bool {
 /// in hand — so it always returns `Ok`. The `Result` return type is kept so
 /// a future caller-side failure mode does not require an API change.
 pub fn inspect(relative_path: &Path, contents: &str) -> Result<Vec<Finding>> {
+    Ok(inspect_config(relative_path, contents).0)
+}
+
+/// As [`inspect`], and also says whether the config parsed.
+///
+/// The boolean is `true` when the contents parsed as the format the path's
+/// extension names, and `false` when the only finding is the `BAS-MCP-000`
+/// malformed-config defect. The parse happens once, so a caller that needs
+/// both the findings and the verdict does not parse twice.
+#[must_use]
+pub fn inspect_config(relative_path: &Path, contents: &str) -> (Vec<Finding>, bool) {
     let format = model::Format::detect(relative_path);
     match model::parse(format, contents) {
-        Ok(config) => Ok(checks::run_all(&config, relative_path, contents)),
-        Err(reason) => Ok(vec![checks::malformed_finding(
-            relative_path,
-            contents,
-            &reason,
-        )]),
+        Ok(config) => (checks::run_all(&config, relative_path, contents), true),
+        Err(reason) => (
+            vec![checks::malformed_finding(relative_path, contents, &reason)],
+            false,
+        ),
     }
 }
 
