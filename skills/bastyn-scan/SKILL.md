@@ -21,7 +21,7 @@ If `bastyn` is missing, ask the user once whether to install it, then use the fi
 
 1. `brew install bastyn-labs/tap/bastyn` (macOS, Linux with Homebrew)
 2. `cargo install bastyn` (Rust toolchain present)
-3. The install script: download `https://raw.githubusercontent.com/BASTYN-labs/bastyn-scan/main/install.sh` to a temporary file, read it, then run it. Or take a prebuilt binary from https://github.com/BASTYN-labs/bastyn-scan/releases
+3. The install script: download `https://raw.githubusercontent.com/bastyn-labs/bastyn-scan/main/install.sh` to a temporary file, read it, then run it. Or take a prebuilt binary from https://github.com/bastyn-labs/bastyn-scan/releases
 
 Do not elevate privileges or change system security settings to install. If installation fails or is declined, say so. Never present a manual review as a Bastyn scan.
 
@@ -70,9 +70,9 @@ Run `bastyn scan --help` for the full list.
 ## CI
 
 ```yaml
-- uses: BASTYN-labs/bastyn-scan@v0
+- uses: bastyn-labs/bastyn-scan@v0
   with:
     fail-on: high
 ```
 
-Source and docs: https://github.com/BASTYN-labs/bastyn-scan
+Source and docs: https://github.com/bastyn-labs/bastyn-scan
