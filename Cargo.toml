@@ -3,7 +3,7 @@ members = ["crates/bastyn-cli", "crates/bastyn-core"]
 resolver = "3"
 
 [workspace.package]
-version = "0.2.2"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.90"
 license = "Apache-2.0"
@@ -15,7 +15,7 @@ keywords = ["security", "sast", "static-analysis", "scanner", "cli"]
 categories = ["command-line-utilities", "development-tools"]
 
 [workspace.dependencies]
-bastyn-core = { path = "crates/bastyn-core", version = "0.2.2" }
+bastyn-core = { path = "crates/bastyn-core", version = "0.3.0" }
 
 anyhow = "1.0"
 clap = { version = "4.5", features = ["derive", "wrap_help"] }

@@ -25,7 +25,7 @@ inputs:
       tagged for, so pinning the action pins the binary. Pass "latest" to
       always take the newest release instead.
     required: false
-    default: v0.2.2
+    default: v0.3.0
   format:
     description: Output format written to the log. One of text, json, or sarif.
     required: false

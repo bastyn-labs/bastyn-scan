@@ -148,7 +148,7 @@ checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
 
 [[package]]
 name = "bastyn"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -163,7 +163,7 @@ dependencies = [
 
 [[package]]
 name = "bastyn-core"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "ast-grep-core",
  "ast-grep-language",

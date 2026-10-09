@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-09
+
 ### Added
 
 - **`coverage` in the JSON report.** `bastyn scan --format json` now has a top-level `coverage` object listing the MCP configs that were read and parsed (`mcp_manifests`), the `SKILL.md` files (`skill_files`) and the other instruction files (`instruction_files`), plus `coverage.skipped`, the `skipped` array with each reason as a field. The existing `skipped` array is unchanged.
@@ -583,7 +585,8 @@ single point in time. This paragraph prints no number, because it drifts every t
 added. See [Measured coverage](README.md#measured-coverage) for the current count, always derived
 from the gate rather than typed in here.
 
-[Unreleased]: https://github.com/BASTYN-labs/bastyn-scan/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/BASTYN-labs/bastyn-scan/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/BASTYN-labs/bastyn-scan/releases/tag/v0.3.0
 [0.2.2]: https://github.com/BASTYN-labs/bastyn-scan/releases/tag/v0.2.2
 [0.2.1]: https://github.com/BASTYN-labs/bastyn-scan/releases/tag/v0.2.1
 [0.2.0]: https://github.com/BASTYN-labs/bastyn-scan/releases/tag/v0.2.0
