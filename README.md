@@ -368,17 +368,17 @@ Nothing in the scanned repository can turn reporting on or off or change where t
 A corpus under [`tests/corpus/`](tests/corpus/) specifies what should and should not be found, and a gate measures the engine against it on every push. Its output, verbatim, from `cargo test -p bastyn-core --test corpus_gate corpus_gate -- --nocapture`:
 
 ```
-corpus: 41/41 expected defects found        (recall on this corpus 100%)
-        28/28 expected observations found
-        41/41 defects returned are expected   (defect precision on this corpus 100%, known false positives included)
+corpus: 99/99 expected defects found        (recall on this corpus 100%)
+        29/29 expected observations found
+        99/103 defects returned are expected   (defect precision on this corpus 96%, known false positives included)
         0 unaccounted findings
-        13 known gaps (+8 reachable only with a network connection)
-        0 known false positives (precision debt -- tracked separately from known gaps, see MAX_KNOWN_FALSE_POSITIVES)
+        17 known gaps (+8 reachable only with a network connection)
+        4 known false positives (precision debt -- tracked separately from known gaps, see MAX_KNOWN_FALSE_POSITIVES)
 ```
 
-Every fixture in that corpus is one we wrote, so "41/41" is a regression alarm and not a coverage figure: the engine finds every defect and every observation *we planted*, and real-world recall is unmeasured. Defect precision's denominator is every defect the scan returned on this corpus, known false positives included, not just the ones that were expected — a false positive would show up as a defect returned but not expected, which is exactly what would pull that percentage down. A more honest single recall number folds the known gaps back in, at 41/(41+13) ≈ 76% of expected defects, excluding the 8 gaps that are unreachable only because CI runs `--offline`.
+Every fixture in that corpus is one we wrote, so "99/99" is a regression alarm and not a coverage figure: the engine finds every defect and observation designated as an expected detection, and real-world recall is unmeasured. Defect precision's denominator is every defect the scan returned on this corpus, known false positives included, not just the ones that were expected — a false positive would show up as a defect returned but not expected, which is exactly what would pull that percentage down. A more honest single recall number folds the known gaps back in, at 99/(99+17) ≈ 85% of expected defects, excluding the 8 gaps that are unreachable only because CI runs `--offline`.
 
-The gaps are published rather than hidden. Each one names the code shape we miss and why, in [`tests/corpus/expected.toml`](tests/corpus/expected.toml), and the count fails the build if it grows. Known false positives are ratcheted on a separate line, currently zero, because a recall gap and a precision gap are not the same problem.
+The gaps are published rather than hidden. Each one names the code shape we miss and why, in [`tests/corpus/expected.toml`](tests/corpus/expected.toml), and the count fails the build if it grows. Known false positives are ratcheted on a separate line, currently four, because a recall gap and a precision gap are not the same problem.
 
 Of the 19 framework categories Bastyn maps to (see [`docs/frameworks/`](docs/frameworks/)), 12 have a detector behind them: LLM01, LLM02, LLM03, LLM04, LLM06, LLM08, LLM10, ZT1, ZT2, ZT3, ZT4, ZT5. LLM09 and ZT6 are recognised categories with no detector yet, and the remaining five (LLM05, LLM07, ZT7, ZT8, ZT9) are not code-detectable at all, as `tests/corpus/vulnerable/NOT_DETECTABLE.md` sets out. Having a detector for a category is not the same as covering it, and the published gaps sit inside categories that are in this count.
 
