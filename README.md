@@ -17,6 +17,10 @@
   <a href="CONTRIBUTING.md"><img alt="PRs welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg"></a>
 </p>
 
+<p align="center">
+  <img alt="A terminal running bastyn scan on a folder, then scrolling back through the report to a SKILL.md finding, an MCP finding and dependency CVEs" src="docs/demo/demo.gif" width="860">
+</p>
+
 ---
 
 > **Status: alpha.** `bastyn scan` finds real issues today: 53 AST rules over Python, TypeScript and JavaScript across the OWASP GenAI and Anthropic Zero Trust categories, plus MCP manifest inspection, Dockerfile and Docker Compose inspection, a hidden-Unicode scan of agent instruction files, `SKILL.md` manifest scanning, and CVE matching against OSV. The embedded prompt-injection classifier is not built yet. See [Measured coverage](#measured-coverage) for what the test corpus does and does not prove, and [Roadmap](#roadmap) for what is missing.
