@@ -58,6 +58,18 @@ brew install bastyn-labs/tap/bastyn
 curl -fsSL https://raw.githubusercontent.com/BASTYN-labs/bastyn-scan/main/install.sh | sh
 ```
 
+### Use it from a coding agent
+
+This repository ships an [Agent Skill](https://agentskills.io) at [`skills/bastyn-scan`](skills/bastyn-scan/SKILL.md) that teaches a coding agent how to run `bastyn scan` and report the result accurately, including what was not covered. It works with agents that support the Agent Skills format, such as Claude Code.
+
+```console
+npx skills add bastyn-labs/bastyn-scan --skill bastyn-scan
+```
+
+Then ask your agent: "Scan this repository with Bastyn and show me what to fix first."
+
+The skill does not include the `bastyn` executable. If it is missing, the agent asks before installing it. By default the skill scans with `--offline`, and offers the dependency CVE lookup afterwards.
+
 ## Usage
 
 A complete run, pasted verbatim, over a three-file project: an `agent.py` that passes a model reply to `eval()` and asks for a completion with no token ceiling, a `config.py` holding a provider key as a literal, and a `requirements.txt` of three pinned dependencies.
