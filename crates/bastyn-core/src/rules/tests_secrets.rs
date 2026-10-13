@@ -268,6 +268,32 @@ fn bas_zt1_010_ignores_a_self_referential_storage_key_name() {
 }
 
 #[test]
+fn bas_zt1_010_ignores_a_plain_url_but_flags_one_with_embedded_credentials() {
+    let ruleset = ruleset();
+
+    for source in [
+        "info[\"token_uri\"] = \"https://oauth2.provider.invalid/token\"\n",
+        "TOKEN_URI = \"https://oauth2.provider.invalid/token\"\n",
+        "config = {\"secret_manager_url\": \"https://secrets.provider.invalid/v1/resolve\"}\n",
+    ] {
+        let findings = scan_source(&ruleset, Path::new("auth.py"), source);
+        assert!(
+            !ids(&findings).contains(&"BAS-ZT1-010"),
+            "{source}: {findings:?}"
+        );
+    }
+
+    let source = "database_password_url = \"https://Zx9fQ2mLp4Rt8Vw3@db.provider.invalid/main\"\n";
+    let findings = scan_source(&ruleset, Path::new("auth.py"), source);
+    assert!(ids(&findings).contains(&"BAS-ZT1-010"), "{findings:?}");
+
+    let source =
+        "api_token_url = \"https://api.provider.invalid/v1/hook?api_key=Zx9fQ2mLp4Rt8Vw3Kd7\"\n";
+    let findings = scan_source(&ruleset, Path::new("auth.py"), source);
+    assert!(ids(&findings).contains(&"BAS-ZT1-010"), "{findings:?}");
+}
+
+#[test]
 fn bas_zt1_010_ignores_an_nlp_format_token_not_an_auth_token() {
     // "token" is exceptionally overloaded in an AI codebase: a
     // tokenization/format-string sense has nothing to do with

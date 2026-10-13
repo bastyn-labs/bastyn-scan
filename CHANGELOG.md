@@ -11,6 +11,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **A terminal recording in the README.** `docs/demo/demo.gif` shows `bastyn scan` on a folder with code, skill, MCP and dependency findings.
 - **An agent skill for `bastyn scan`.** `skills/bastyn-scan/SKILL.md` teaches a coding agent how to run a scan, read the exit codes, tell defects from observations, and report coverage gaps. It installs with `npx skills add BASTYN-labs/bastyn-scan`.
 
+### Fixed
+
+- **`BAS-ZT1-010` and `BAS-ZT1-011` reported a plain endpoint URL as a hardcoded credential** when the variable name contained a word such as `token` or `secret`. A value that is an `http(s)` URL containing none of `@`, `?`, `#`, `=` or `;` is no longer reported; a URL with userinfo or a query string is still reported. Known limit: a token embedded in the URL path (for example a webhook path segment) is not reported.
+
 ## [0.3.0] - 2026-10-09
 
 ### Added

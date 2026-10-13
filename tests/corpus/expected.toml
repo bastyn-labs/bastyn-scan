@@ -1665,3 +1665,30 @@ file     = "vulnerable/real_misses/shell_command_via_thread_pool_forward.py"
 line     = 26
 category = "LLM10"
 why      = "_exec()'s cmd is forwarded from run() (an @mcp.tool() entry point) through asyncio.to_thread(_exec, cmd) -- a callee shape collect_entry_point_forwards does not recognize (only a bare NAME(...) call or a self/cls-qualified NAME(...) call are). flow.passthrough_downgrade wrongly reports this as an observation instead of a defect. The space of ways Python code can pass a callable and its argument along (thread pools, unbound-method calls, super() calls, decorator registries, dict-of-callables dispatch, ...) is genuinely open-ended; this is one representative shape, not exhaustive -- see bastyn.yml's comment for the others, which fail identically for the identical reason."
+
+# ---------------------------------------------------------------------
+# Credential-shaped names holding URLs: a plain http(s) URL with no
+# embedded user:password is not a secret; one with credentials still is.
+# ---------------------------------------------------------------------
+
+[[expect_none]]
+file = "clean/zt1_url_values.py"
+why  = "credential-shaped names holding plain endpoint URLs with no embedded credentials"
+
+[[expect]]
+file     = "vulnerable/zt1_url_with_credentials.py"
+line     = 3
+rule     = "BAS-ZT1-010"
+category = "ZT1"
+kind     = "defect"
+severity = "critical"
+why      = "a URL whose userinfo part is a credential is a hardcoded secret"
+
+[[expect]]
+file     = "vulnerable/zt1_url_with_credentials.py"
+line     = 4
+rule     = "BAS-ZT1-010"
+category = "ZT1"
+kind     = "defect"
+severity = "critical"
+why      = "a URL whose query string carries a credential is a hardcoded secret"
