@@ -259,17 +259,22 @@ fn a_skills_references_files_are_inspected_and_listed_in_coverage() {
         .filter(|f| f["rule_id"] == "BAS-SKILL-002")
         .collect();
     assert_eq!(injections.len(), 1, "{injections:#?}");
+    // Paths use the platform separator; compare them with forward slashes.
+    let slashed = |value: &serde_json::Value| value.as_str().map(|path| path.replace('\\', "/"));
     assert_eq!(
-        injections[0]["location"]["file"],
-        "skills/s/references/setup.md"
+        slashed(&injections[0]["location"]["file"]).as_deref(),
+        Some("skills/s/references/setup.md")
+    );
+    let slashed_list = |value: &serde_json::Value| -> Vec<Option<String>> {
+        value.as_array().unwrap().iter().map(slashed).collect()
+    };
+    assert_eq!(
+        slashed_list(&report["coverage"]["skill_reference_files"]),
+        vec![Some("skills/s/references/setup.md".to_owned())]
     );
     assert_eq!(
-        report["coverage"]["skill_reference_files"],
-        serde_json::json!(["skills/s/references/setup.md"])
-    );
-    assert_eq!(
-        report["coverage"]["skill_files"],
-        serde_json::json!(["skills/s/SKILL.md"])
+        slashed_list(&report["coverage"]["skill_files"]),
+        vec![Some("skills/s/SKILL.md".to_owned())]
     );
 }
 
