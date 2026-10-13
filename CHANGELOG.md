@@ -18,6 +18,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **`BAS-SKILL-003` now reports an observation instead of a defect**, because the repository cannot show whether skipping confirmation is wrong for that skill. A scan whose only skill finding is `BAS-SKILL-003` no longer reaches `--fail-on high` or `critical` (exit code 1) because of it; the finding is shown with `--show-observations`.
 - **`BAS-SKILL-002` and `BAS-SKILL-003` no longer report a phrase that the text is refusing or quoting.** A phrase is skipped when an earlier refusal or negation cue sits in the same sentence, when the phrase is inside a quotation and its paragraph (or the lead-in of its list) carries a refusal cue, or, for `BAS-SKILL-002`, when it is inside a fenced block with a refusal or detection cue in the paragraph next to the fence. A cue in a neighbouring sentence, list item or paragraph does not excuse a phrase, and a fenced phrase with no such cue is still reported. A cue earlier in the same sentence can still excuse a phrase that follows it; this is a known limit.
 - **The `BAS-SKILL-002` remediation text** no longer suggests fencing the phrase (the check reads fenced text too); it now suggests introducing a documented example with a sentence that says the agent must refuse it.
+- **The agent skill no longer installs Bastyn with the install script.** If neither Homebrew nor Cargo is available, it asks the user to install Bastyn from the README instructions.
 
 ### Fixed
 

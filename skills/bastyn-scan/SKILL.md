@@ -30,7 +30,7 @@ If `bastyn` is missing, ask the user once whether to install it, then use the fi
 
 1. `brew install bastyn-labs/tap/bastyn` (macOS, Linux with Homebrew)
 2. `cargo install bastyn` (Rust 1.90 or newer)
-3. The install script: download `https://raw.githubusercontent.com/bastyn-labs/bastyn-scan/main/install.sh` to a temporary file, read it, then run it. Or take a prebuilt binary from https://github.com/bastyn-labs/bastyn-scan/releases
+3. Otherwise, do not download or run an install script or binary yourself. Tell the user that neither Homebrew nor Cargo is available, point them to the Install section of the project README (prebuilt binaries are attached to each GitHub release), and wait for them to install it.
 
 Do not elevate privileges or change system security settings to install. If installation fails or is declined, say so. Never present a manual review as a Bastyn scan.
 
