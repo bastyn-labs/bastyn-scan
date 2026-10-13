@@ -63,7 +63,7 @@ Exit `0` does not necessarily mean zero defects: lower-severity defects may rema
 - **Defect**: wrong in any deployment, with evidence in the code (for example, model output passed to `eval`). Report these first, with file and line.
 - **Observation**: a context-dependent or unproven concern, such as a missing control that may exist elsewhere. Hidden by default; this skill uses `--show-observations` to include them. Observations never fail the build. Present them separately as things to check, not established bugs.
 - **Coverage gaps**: files the scan skipped or could not check. Always relay them. A clean result covers only what was scanned.
-- In `--format json`, use `findings[]`, `summary`, `cve` (whether the dependency lookup ran) and `coverage` (`mcp_manifests`, `skill_files`, `instruction_files`, `skipped`). Do not read a missing field as zero. A scan with `--offline` or a failed lookup is never "no vulnerable dependencies".
+- In `--format json`, use `findings[]`, `summary`, `cve` (whether the dependency lookup ran) and `coverage` (`mcp_manifests`, `skill_files`, `skill_reference_files`, `instruction_files`, `skill_unanalysed`, `skipped`). Do not read a missing field as zero. A scan with `--offline` or a failed lookup is never "no vulnerable dependencies".
 
 Each finding carries a rule id (`BAS-LLM10-001`), severity, confidence and a fix. Quote or accurately summarize the scanner's recommended fix. Clearly label additional advice, and redact secrets even when quoting scanner output.
 

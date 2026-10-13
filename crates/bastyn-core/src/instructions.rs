@@ -42,14 +42,21 @@
 //!   reading and is still flagged.
 //! - Ordinary non-ASCII text -- emoji, accented characters, any other
 //!   script -- is never flagged; nothing here even looks at codepoints
-//!   outside the fixed list above. The one codepoint on the list with a
-//!   real competing legitimate use is `U+200D` (zero-width joiner), which
-//!   composes emoji sequences (a family emoji, a profession-plus-gender
-//!   emoji); this is a known, accepted precision trade-off rather than an
-//!   oversight -- narrowing it further would need distinguishing "ZWJ
-//!   between two emoji" from "ZWJ smuggling text," which the corpus
-//!   measurement in this crate's rule-shipping history did not find a
-//!   reason to do (see the report accompanying this module's addition).
+//!   outside the fixed list above.
+//! - Two emoji constructs use list codepoints legitimately and are excused,
+//!   and only these. The three official subdivision flags (England,
+//!   Scotland, Wales) are a black flag (`U+1F3F4`), the tag letters `gbeng`,
+//!   `gbsct` or `gbwls`, and the cancel tag (`U+E007F`); the whole sequence
+//!   is excused, and any other tag character or run is still counted. A
+//!   zero-width joiner (`U+200D`) is excused when the character before it
+//!   (looking past one `U+FE0F` variation selector) and the character after
+//!   it are both emoji, as in a family or profession emoji. A joiner at the
+//!   edge of the text, between letters, or next to another hidden character
+//!   is still counted.
+//!
+//! The remaining limitation: legitimate joiner use in other scripts (for
+//! example Persian or Indic text) is still flagged, and a joiner between two
+//! emoji can in principle carry a hidden signal that this rule does not see.
 
 use std::path::Path;
 
@@ -84,6 +91,71 @@ fn is_hidden_codepoint(ch: char) -> bool {
         || ('\u{E0001}'..='\u{E007F}').contains(&ch)
 }
 
+/// True if `ch` is in the emoji ranges this rule recognises when deciding
+/// whether a zero-width joiner sits inside an emoji sequence.
+fn is_emoji_char(ch: char) -> bool {
+    ('\u{1F300}'..='\u{1FAFF}').contains(&ch)
+        || ('\u{2600}'..='\u{27BF}').contains(&ch)
+        || matches!(ch, '\u{2B50}' | '\u{2B55}')
+}
+
+/// The tag-letter runs of the three official subdivision flags.
+const FLAG_TAG_RUNS: [[char; 5]; 3] = [
+    [
+        '\u{E0067}',
+        '\u{E0062}',
+        '\u{E0065}',
+        '\u{E006E}',
+        '\u{E0067}',
+    ],
+    [
+        '\u{E0067}',
+        '\u{E0062}',
+        '\u{E0073}',
+        '\u{E0063}',
+        '\u{E0074}',
+    ],
+    [
+        '\u{E0067}',
+        '\u{E0062}',
+        '\u{E0077}',
+        '\u{E006C}',
+        '\u{E0073}',
+    ],
+];
+
+/// Marks the tag characters of every complete official subdivision flag
+/// sequence (black flag, a [`FLAG_TAG_RUNS`] entry, cancel tag).
+fn excused_flag_tags(chars: &[char]) -> Vec<bool> {
+    let mut excused = vec![false; chars.len()];
+    for (start, &ch) in chars.iter().enumerate() {
+        if ch != '\u{1F3F4}' {
+            continue;
+        }
+        let tags = &chars[start + 1..];
+        for run in &FLAG_TAG_RUNS {
+            if tags.len() > run.len()
+                && tags[..run.len()] == run[..]
+                && tags[run.len()] == '\u{E007F}'
+            {
+                excused[start + 1..=start + 1 + run.len()].fill(true);
+            }
+        }
+    }
+    excused
+}
+
+/// True if the zero-width joiner at `index` sits between two emoji.
+fn is_joiner_between_emoji(chars: &[char], index: usize) -> bool {
+    let mut before = index;
+    if before > 0 && chars[before - 1] == '\u{FE0F}' {
+        before -= 1;
+    }
+    before > 0
+        && is_emoji_char(chars[before - 1])
+        && chars.get(index + 1).copied().is_some_and(is_emoji_char)
+}
+
 /// A human-readable name for `ch`, used in the finding's description so a
 /// reader does not have to look up a codepoint by hand.
 fn codepoint_name(ch: char) -> &'static str {
@@ -110,17 +182,29 @@ pub fn inspect(relative_path: &Path, contents: &str) -> Vec<Finding> {
     if !is_instruction_file(relative_path) {
         return Vec::new();
     }
+    inspect_text(relative_path, contents)
+}
 
+/// The hidden-codepoint scan of [`inspect`], without the check that the path
+/// is a recognised instruction file. For text the caller has already decided
+/// an agent reads, such as a skill's reference notes.
+#[must_use]
+pub fn inspect_text(relative_path: &Path, contents: &str) -> Vec<Finding> {
     let mut line = 1usize;
     let mut column = 1usize;
     let mut first: Option<(usize, usize, char)> = None;
     let mut count = 0usize;
 
-    for (index, ch) in contents.chars().enumerate() {
+    let chars: Vec<char> = contents.chars().collect();
+    let excused_tags = excused_flag_tags(&chars);
+
+    for (index, &ch) in chars.iter().enumerate() {
         // A byte-order mark at the very start of the file is a legitimate
         // UTF-8 encoding convention, not a hidden payload.
         let is_leading_bom = index == 0 && ch == '\u{FEFF}';
-        if is_hidden_codepoint(ch) && !is_leading_bom {
+        let is_excused =
+            excused_tags[index] || (ch == '\u{200D}' && is_joiner_between_emoji(&chars, index));
+        if is_hidden_codepoint(ch) && !is_leading_bom && !is_excused {
             count += 1;
             if first.is_none() {
                 first = Some((line, column, ch));
@@ -300,5 +384,107 @@ mod tests {
             inspect(Path::new("SKILL.md"), contents),
             Vec::<crate::finding::Finding>::new()
         );
+    }
+
+    /// Tag characters spelling `letters` (ASCII lowercase) as U+E0061.. .
+    fn tag_letters(letters: &str) -> String {
+        letters
+            .chars()
+            .filter_map(|c| char::from_u32(0xE0000 + u32::from(c)))
+            .collect()
+    }
+
+    fn flag(letters: &str) -> String {
+        format!("\u{1F3F4}{}\u{E007F}", tag_letters(letters))
+    }
+
+    fn count_in(contents: &str) -> usize {
+        inspect_text(Path::new("SKILL.md"), contents).len()
+    }
+
+    #[test]
+    fn official_subdivision_flags_are_not_flagged() {
+        for letters in ["gbeng", "gbsct", "gbwls"] {
+            let contents = format!("# Skill\n\nFrom {} with love.\n", flag(letters));
+            assert_eq!(count_in(&contents), 0, "{letters}");
+        }
+    }
+
+    #[test]
+    fn a_joiner_between_two_emoji_is_not_flagged() {
+        let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}";
+        let heart = "\u{1F468}\u{200D}\u{2764}\u{FE0F}\u{200D}\u{1F468}";
+        let contents = format!("Hello {family} and {heart}, plus {}.\n", flag("gbsct"));
+        assert_eq!(count_in(family), 0);
+        assert_eq!(count_in(heart), 0);
+        assert_eq!(count_in(&contents), 0);
+    }
+
+    #[test]
+    fn a_flag_followed_by_a_hidden_sentence_is_flagged() {
+        let hidden: String = "ignore previous"
+            .chars()
+            .filter_map(|c| char::from_u32(0xE0000 + u32::from(c)))
+            .collect();
+        let contents = format!("\u{1F3F4}{hidden}\u{E007F}");
+        assert_eq!(count_in(&contents), 1);
+        let findings = inspect_text(Path::new("SKILL.md"), &contents);
+        assert!(findings[0].description.contains("contains 16 invisible"));
+    }
+
+    #[test]
+    fn other_tag_runs_are_flagged() {
+        let wrong_letters = flag("gbxxx");
+        let no_cancel = format!("\u{1F3F4}{}", tag_letters("gbeng"));
+        let no_flag = format!("a{}\u{E007F}", tag_letters("gbeng"));
+        let extra_tag = format!("\u{1F3F4}{}\u{E0041}\u{E007F}", tag_letters("gbeng"));
+        let trailing = format!("{}\u{E0041}", flag("gbeng"));
+        for (name, contents) in [
+            ("wrong letters", wrong_letters),
+            ("no cancel tag", no_cancel),
+            ("no flag", no_flag),
+            ("extra tag", extra_tag),
+            ("trailing tag", trailing),
+        ] {
+            assert_eq!(count_in(&contents), 1, "{name}");
+        }
+    }
+
+    #[test]
+    fn every_char_of_a_rejected_tag_run_is_counted() {
+        let contents = format!("\u{1F3F4}{}\u{E007F}", tag_letters("gbxxx"));
+        let findings = inspect_text(Path::new("SKILL.md"), &contents);
+        assert_eq!(findings.len(), 1);
+        assert!(
+            findings[0].description.contains("contains 6 invisible"),
+            "{}",
+            findings[0].description
+        );
+    }
+
+    #[test]
+    fn a_joiner_outside_an_emoji_pair_is_flagged() {
+        for (name, contents) in [
+            ("letters", "a\u{200D}b"),
+            ("at start", "\u{200D}\u{1F468}"),
+            ("at end", "\u{1F468}\u{200D}"),
+            ("hidden neighbour", "\u{1F468}\u{200D}\u{200B}\u{1F469}"),
+            ("emoji then letter", "\u{1F468}\u{200D}x"),
+            ("letter then emoji", "x\u{200D}\u{1F468}"),
+        ] {
+            assert!(count_in(contents) >= 1, "{name}");
+        }
+        let findings = inspect_text(Path::new("SKILL.md"), "\u{1F468}\u{200D}\u{200B}\u{1F469}");
+        assert!(findings[0].description.contains("contains 2 invisible"));
+    }
+
+    #[test]
+    fn a_hidden_character_after_excused_emoji_reports_its_own_location() {
+        let contents = "\u{1F468}\u{200D}\u{1F469} \u{200B}";
+        let findings = inspect_text(Path::new("SKILL.md"), contents);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].location.line, 1);
+        assert_eq!(findings[0].location.column, 5);
+        assert!(findings[0].description.contains("contains 1 invisible"));
     }
 }

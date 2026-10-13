@@ -139,11 +139,26 @@ pub struct Coverage {
     /// `SKILL.md` files that were read.
     #[serde(default)]
     pub skill_files: Vec<String>,
+    /// Text files (`.md`, `.markdown`, `.txt`) inside a skill's `references/`
+    /// folder that were read and checked for instruction-override language,
+    /// skip-confirmation language and hidden Unicode. A file that could not be
+    /// read is listed under `skipped` instead. Sorted by path.
+    #[serde(default)]
+    pub skill_reference_files: Vec<String>,
     /// Agent instruction files (such as `AGENTS.md`) that were read. An MCP
     /// configuration is listed only under `mcp_manifests`, and a `SKILL.md`
     /// only under `skill_files`, never here.
     #[serde(default)]
     pub instruction_files: Vec<String>,
+    /// Files located under a skill directory (the directory of a `SKILL.md`,
+    /// at any depth) that no analyser reads, such as shell scripts and
+    /// images. They are present in the skill but were not inspected. A file
+    /// that was skipped as unreadable or unparseable is listed under `skipped`
+    /// only. For a `SKILL.md` at the scan root, only the `scripts/`,
+    /// `references/` and `assets/` folders are considered, never the rest of
+    /// the repository. Each file is listed once, sorted bytewise by path.
+    #[serde(default)]
+    pub skill_unanalysed: Vec<String>,
     /// The structured form of [`Report::skipped`]: the same entries in the
     /// same order, with the reason as data.
     #[serde(default)]

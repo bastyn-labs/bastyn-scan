@@ -87,7 +87,9 @@ mod tests {
   "coverage": {
     "mcp_manifests": [],
     "skill_files": [],
+    "skill_reference_files": [],
     "instruction_files": [],
+    "skill_unanalysed": [],
     "skipped": []
   }
 }"#;

@@ -9,11 +9,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Added
 
 - **A terminal recording in the README.** `docs/demo/demo.gif` shows `bastyn scan` on a folder with code, skill, MCP and dependency findings.
+- **`BAS-SKILL-002`, `BAS-SKILL-003` and the hidden-Unicode check now read a skill's `references/` files.** Text files (`.md`, `.markdown`, `.txt`) under `<skill>/references/` are checked like the `SKILL.md` they belong to, and are listed in the new `coverage.skill_reference_files`. A root-level `SKILL.md` claims only its own `references/` folder. A reference file never gets `BAS-SKILL-001`.
+- **`coverage.skill_unanalysed` in the JSON report.** It lists the files inside a skill folder that no analyser reads (for example images and shell scripts), sorted, so a clean result shows what it did not cover. Files that were skipped as unreadable or unparseable stay in `coverage.skipped` only.
 - **An agent skill for `bastyn scan`.** `skills/bastyn-scan/SKILL.md` teaches a coding agent how to run a scan, read the exit codes, tell defects from observations, and report coverage gaps. It installs with `npx skills add BASTYN-labs/bastyn-scan`.
+
+### Changed
+
+- **`BAS-SKILL-003` now reports an observation instead of a defect**, because the repository cannot show whether skipping confirmation is wrong for that skill. A scan whose only skill finding is `BAS-SKILL-003` no longer reaches `--fail-on high` or `critical` (exit code 1) because of it; the finding is shown with `--show-observations`.
+- **`BAS-SKILL-002` and `BAS-SKILL-003` no longer report a phrase that the text is refusing or quoting.** A phrase is skipped when an earlier refusal or negation cue sits in the same sentence, when the phrase is inside a quotation and its paragraph (or the lead-in of its list) carries a refusal cue, or, for `BAS-SKILL-002`, when it is inside a fenced block with a refusal or detection cue in the paragraph next to the fence. A cue in a neighbouring sentence, list item or paragraph does not excuse a phrase, and a fenced phrase with no such cue is still reported. A cue earlier in the same sentence can still excuse a phrase that follows it; this is a known limit.
+- **The `BAS-SKILL-002` remediation text** no longer suggests fencing the phrase (the check reads fenced text too); it now suggests introducing a documented example with a sentence that says the agent must refuse it.
 
 ### Fixed
 
 - **`BAS-ZT1-010` and `BAS-ZT1-011` reported a plain endpoint URL as a hardcoded credential** when the variable name contained a word such as `token` or `secret`. A value that is an `http(s)` URL containing none of `@`, `?`, `#`, `=` or `;` is no longer reported; a URL with userinfo or a query string is still reported. Known limit: a token embedded in the URL path (for example a webhook path segment) is not reported.
+- **`BAS-LLM01-001` no longer reports the official England, Scotland and Wales flag emoji, or a zero width joiner placed directly between two emoji.** Any other tag-character run, and any other use of a joiner, is still reported.
 
 ## [0.3.0] - 2026-10-09
 
