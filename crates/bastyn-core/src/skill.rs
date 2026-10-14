@@ -1,4 +1,4 @@
-//! `SKILL.md` scanning: `BAS-SKILL-001` through `BAS-SKILL-005`.
+//! `SKILL.md` scanning: `BAS-SKILL-001` through `BAS-SKILL-009`.
 //!
 //! `SKILL.md` is the agent-skill manifest convention used by Claude Code,
 //! Cursor, and other agent hosts (`skills/<skill-name>/SKILL.md`, optionally
@@ -42,6 +42,19 @@
 //!   send a key, token or password into the conversation. OWASP `GenAI`'s
 //!   LLM02. Filed as an observation: the repository cannot show whether a
 //!   safer way to supply the credential is also offered.
+//! - **`BAS-SKILL-006`** -- text telling the agent to read issue or pull
+//!   request text (`gh issue view`, `gh pr diff` and similar). Anyone who can
+//!   open an issue or pull request can write that text, so instructions hidden
+//!   in it reach the agent. OWASP `GenAI`'s LLM01. Observation.
+//! - **`BAS-SKILL-007`** -- text telling the agent to install further skills
+//!   (`npx skills add ...`), which extends the set of instructions the agent
+//!   trusts. OWASP `GenAI`'s LLM04. Observation.
+//! - **`BAS-SKILL-008`** -- a template that loads a script from a public CDN at
+//!   runtime, so the page it produces runs code the skill does not pin. OWASP
+//!   `GenAI`'s LLM04. Observation.
+//! - **`BAS-SKILL-009`** -- text telling the agent to check out a pull request
+//!   and run it, which executes code the agent did not write. OWASP `GenAI`'s
+//!   LLM03. Observation.
 //!
 //! All of them are hand-written checks over the file's raw text rather than
 //! AST rule patterns -- there is no source grammar to match against -- which
@@ -75,6 +88,10 @@ const RULE_PROMPT_INJECTION: &str = "BAS-SKILL-002";
 const RULE_SKIP_CONFIRMATION: &str = "BAS-SKILL-003";
 const RULE_DIAGRAM_SECURITY_LEVEL: &str = "BAS-SKILL-004";
 const RULE_CREDENTIAL_PASTE: &str = "BAS-SKILL-005";
+const RULE_OUTSIDER_TEXT: &str = "BAS-SKILL-006";
+const RULE_SKILL_INSTALL: &str = "BAS-SKILL-007";
+const RULE_CDN_SCRIPT: &str = "BAS-SKILL-008";
+const RULE_RUN_OUTSIDER_CODE: &str = "BAS-SKILL-009";
 
 /// The frontmatter fields the Agent Skills specification requires
 /// (<https://agentskills.io/specification>). `version` is not a spec field
@@ -165,6 +182,38 @@ const CREDENTIAL_PASTE_PHRASES: &[&str] = &[
     "share your password",
 ];
 
+/// `BAS-SKILL-006` trigger text: commands that print issue or pull request
+/// text. Lowercase, matched against normalised text.
+const OUTSIDER_TEXT_PHRASES: &[&str] = &[
+    "gh pr view",
+    "gh pr diff",
+    "gh issue view",
+    "gh issue list",
+    "gh pr list",
+];
+
+/// `BAS-SKILL-007` trigger text: commands that install further skills.
+const SKILL_INSTALL_PHRASES: &[&str] = &["npx skills add", "skills add "];
+
+/// `BAS-SKILL-008` trigger text: markup that loads a script from a public CDN.
+const CDN_SCRIPT_PHRASES: &[&str] = &[
+    "src=\"https://cdn.",
+    "src='https://cdn.",
+    "src=\"https://unpkg.com",
+    "src=\"https://cdn.jsdelivr.net",
+    "from \"https://cdn.jsdelivr.net",
+    "from \"https://esm.sh",
+];
+
+/// `BAS-SKILL-009` trigger text: running code taken from a pull request.
+const RUN_OUTSIDER_CODE_PHRASES: &[&str] = &[
+    "check out the pr",
+    "check out the pull request",
+    "check out the branch and run",
+    "check it out, run",
+    "checkout the pr and run",
+];
+
 /// True if this path is a file this inspector should scan: any file named
 /// `SKILL.md`, case-insensitive, regardless of directory.
 #[must_use]
@@ -178,7 +227,7 @@ pub fn is_skill_file(path: &Path) -> bool {
 /// module does not claim yields nothing, so a caller that has not consulted
 /// [`is_skill_file`] still gets a correct answer.
 ///
-/// Each of the five checks below is independent, so one file can produce
+/// Each of the nine checks below is independent, so one file can produce
 /// findings from more than one of them.
 #[must_use]
 pub fn inspect(relative_path: &Path, contents: &str) -> Vec<Finding> {
@@ -192,6 +241,10 @@ pub fn inspect(relative_path: &Path, contents: &str) -> Vec<Finding> {
     findings.extend(check_skip_confirmation(relative_path, contents));
     findings.extend(check_diagram_security_level(relative_path, contents));
     findings.extend(check_credential_paste(relative_path, contents));
+    findings.extend(check_outsider_text(relative_path, contents));
+    findings.extend(check_skill_install(relative_path, contents));
+    findings.extend(check_cdn_script(relative_path, contents));
+    findings.extend(check_run_outsider_code(relative_path, contents));
     findings
 }
 
@@ -235,7 +288,7 @@ pub fn is_skill_reference(path: &Path, skill_dirs: &BTreeSet<PathBuf>) -> bool {
 }
 
 /// Inspect one file already recognised by [`is_skill_reference`]: the
-/// `BAS-SKILL-002` and `BAS-SKILL-003` phrase checks, with the same context
+/// `BAS-SKILL-002` to `BAS-SKILL-009` phrase checks, with the same context
 /// filter as a manifest, and the hidden-Unicode check (`BAS-LLM01-001`).
 /// The frontmatter check (`BAS-SKILL-001`) is never applied, because a
 /// reference file is not a manifest.
@@ -246,6 +299,10 @@ pub fn inspect_reference(relative_path: &Path, contents: &str) -> Vec<Finding> {
     findings.extend(check_skip_confirmation(relative_path, contents));
     findings.extend(check_diagram_security_level(relative_path, contents));
     findings.extend(check_credential_paste(relative_path, contents));
+    findings.extend(check_outsider_text(relative_path, contents));
+    findings.extend(check_skill_install(relative_path, contents));
+    findings.extend(check_cdn_script(relative_path, contents));
+    findings.extend(check_run_outsider_code(relative_path, contents));
     findings
 }
 
@@ -822,6 +879,28 @@ fn block_between(lines: &[Line<'_>], opening: usize, closing: usize) -> FencedBl
     }
 }
 
+/// True if the match of `phrase` at `offset` in `text` does not start or end
+/// inside a longer word: a phrase that begins (or ends) with a letter or digit
+/// must not be preceded (or followed) by one.
+fn on_word_boundaries(text: &str, offset: usize, phrase: &str) -> bool {
+    let starts_word = phrase.chars().next().is_some_and(char::is_alphanumeric);
+    let ends_word = phrase
+        .chars()
+        .next_back()
+        .is_some_and(char::is_alphanumeric);
+    let before_ok = !starts_word
+        || !text[..offset]
+            .chars()
+            .next_back()
+            .is_some_and(char::is_alphanumeric);
+    let after_ok = !ends_word
+        || !text[offset + phrase.len()..]
+            .chars()
+            .next()
+            .is_some_and(char::is_alphanumeric);
+    before_ok && after_ok
+}
+
 /// Search `contents` for every live occurrence of every phrase in
 /// `phrases`, case-insensitively *and* whitespace-insensitively, and report
 /// the first one found (by byte offset into `contents`).
@@ -878,6 +957,9 @@ fn scan_phrases(contents: &str, phrases: &[&'static str], cues: CueSet) -> Optio
             counted.1 += normalized.text[counted.0..offset].chars().count();
             counted.0 = offset;
             let original = normalized.offsets[counted.1];
+            if !on_word_boundaries(&normalized.text, offset, phrase) {
+                continue;
+            }
             if in_cued_fence(original) {
                 continue;
             }
@@ -1101,6 +1183,127 @@ fn check_credential_paste(relative_path: &Path, contents: &str) -> Option<Findin
         secondary_rule_ids: Vec::new(),
         references: Vec::new(),
     })
+}
+
+/// What differs between the observation-only checks built by
+/// [`capability_note`].
+struct CapabilityRule {
+    rule_id: &'static str,
+    phrases: &'static [&'static str],
+    title: &'static str,
+    category: Category,
+    /// Completes "This file ..." in the description.
+    what: &'static str,
+    /// Why the behaviour matters, one sentence.
+    subject: &'static str,
+    remediation: &'static str,
+}
+
+const OUTSIDER_TEXT_RULE: CapabilityRule = CapabilityRule {
+    rule_id: RULE_OUTSIDER_TEXT,
+    phrases: OUTSIDER_TEXT_PHRASES,
+    title: "Skill file tells the agent to read issue or pull request text",
+    category: Category::Llm01,
+    what: "tells the agent to read issue or pull request text",
+    subject: "That text can be written by anyone who can open an issue or pull request, so \
+              instructions hidden in it reach the agent.",
+    remediation: "Treat the text as data, never as instructions, and say so in the skill.",
+};
+
+const SKILL_INSTALL_RULE: CapabilityRule = CapabilityRule {
+    rule_id: RULE_SKILL_INSTALL,
+    phrases: SKILL_INSTALL_PHRASES,
+    title: "Skill file tells the agent to install further skills",
+    category: Category::Llm04,
+    what: "tells the agent to install further skills",
+    subject: "This extends the set of instructions the agent trusts.",
+    remediation: "Name and pin the skills it installs, or document them for the user to install.",
+};
+
+const CDN_SCRIPT_RULE: CapabilityRule = CapabilityRule {
+    rule_id: RULE_CDN_SCRIPT,
+    phrases: CDN_SCRIPT_PHRASES,
+    title: "Skill file produces a page that loads a script from a public CDN",
+    category: Category::Llm04,
+    what: "produces a page that loads a script from a public CDN",
+    subject: "The page loads that script at runtime, so it runs code the skill does not pin.",
+    remediation: "Pin the script to a specific version with an integrity hash, or bundle it.",
+};
+
+const RUN_OUTSIDER_CODE_RULE: CapabilityRule = CapabilityRule {
+    rule_id: RULE_RUN_OUTSIDER_CODE,
+    phrases: RUN_OUTSIDER_CODE_PHRASES,
+    title: "Skill file tells the agent to run code from a pull request",
+    category: Category::Llm03,
+    what: "tells the agent to check out a pull request and run it",
+    subject: "This runs code from a pull request the agent did not write.",
+    remediation: "Run outsider code only in a sandbox, and say so in the skill.",
+};
+
+/// Build the observation for one [`CapabilityRule`]: the first live phrase
+/// match in the file, or nothing. `Kind::Observation`, `Severity::Low`,
+/// `Confidence::Medium`.
+fn capability_note(relative_path: &Path, contents: &str, rule: &CapabilityRule) -> Option<Finding> {
+    let PhraseMatch {
+        count,
+        line,
+        column,
+        phrase,
+    } = scan_phrases(contents, rule.phrases, CueSet::Negation)?;
+
+    let snippet = contents
+        .lines()
+        .nth(line - 1)
+        .unwrap_or_default()
+        .trim()
+        .to_owned();
+    let what = rule.what;
+    let subject = rule.subject;
+
+    Some(Finding {
+        rule_id: rule.rule_id.to_owned(),
+        title: rule.title.to_owned(),
+        kind: Kind::Observation,
+        severity: Severity::Low,
+        confidence: Confidence::Medium,
+        categories: vec![rule.category],
+        location: Location {
+            file: relative_path.to_path_buf(),
+            line,
+            column,
+        },
+        snippet,
+        description: format!(
+            "This file {what} ({count} occurrence(s)), the first being \"{phrase}\". \
+             {subject} The repository cannot show whether this is intended or safeguarded, \
+             so a reviewer should confirm."
+        ),
+        remediation: rule.remediation.to_owned(),
+        secondary_rule_ids: Vec::new(),
+        references: Vec::new(),
+    })
+}
+
+/// `BAS-SKILL-006` -- text telling the agent to read issue or pull request
+/// text, anywhere in the file's text.
+fn check_outsider_text(relative_path: &Path, contents: &str) -> Option<Finding> {
+    capability_note(relative_path, contents, &OUTSIDER_TEXT_RULE)
+}
+
+/// `BAS-SKILL-007` -- text telling the agent to install further skills.
+fn check_skill_install(relative_path: &Path, contents: &str) -> Option<Finding> {
+    capability_note(relative_path, contents, &SKILL_INSTALL_RULE)
+}
+
+/// `BAS-SKILL-008` -- a template that loads a script from a public CDN.
+fn check_cdn_script(relative_path: &Path, contents: &str) -> Option<Finding> {
+    capability_note(relative_path, contents, &CDN_SCRIPT_RULE)
+}
+
+/// `BAS-SKILL-009` -- text telling the agent to check out a pull request and
+/// run it.
+fn check_run_outsider_code(relative_path: &Path, contents: &str) -> Option<Finding> {
+    capability_note(relative_path, contents, &RUN_OUTSIDER_CODE_RULE)
 }
 
 #[cfg(test)]
@@ -1770,6 +1973,187 @@ mod tests {
             .filter(|f| f.rule_id == "BAS-SKILL-005")
             .collect();
         assert_eq!(hit.len(), 1, "{found:#?}");
+    }
+
+    fn ref_rule(text: &str, rule: &str) -> Vec<Finding> {
+        inspect_reference(Path::new("a/references/notes.md"), text)
+            .into_iter()
+            .filter(|f| f.rule_id == rule)
+            .collect()
+    }
+
+    fn assert_note(found: &[Finding], category: Category) {
+        assert_eq!(found.len(), 1, "{found:#?}");
+        assert_eq!(found[0].kind, Kind::Observation);
+        assert_eq!(found[0].severity, Severity::Low);
+        assert_eq!(found[0].confidence, Confidence::Medium);
+        assert_eq!(found[0].categories, vec![category]);
+    }
+
+    #[test]
+    fn reading_issue_or_pull_request_text_is_an_observation() {
+        for command in [
+            "gh pr view 12",
+            "gh pr diff 12",
+            "gh issue view 12",
+            "gh issue list",
+            "gh pr list",
+        ] {
+            let contents = format!("{FM}Run `{command}` to read the report.\n");
+            assert_note(&by_rule(&contents, "BAS-SKILL-006"), Category::Llm01);
+        }
+    }
+
+    #[test]
+    fn not_reading_issue_text_is_not_reported() {
+        let contents = format!("{FM}Never run gh issue view on a private repository.\n");
+        assert_eq!(by_rule(&contents, "BAS-SKILL-006").len(), 0);
+    }
+
+    #[test]
+    fn unrelated_text_does_not_trigger_the_outsider_text_check() {
+        for text in [
+            "Although pr view counts are interesting, ignore them.",
+            "Although pr list sizes vary, move on.",
+            "Use `gh pr viewer` as a label.",
+            "Run `gh pr create` to open one.",
+        ] {
+            let contents = format!("{FM}{text}\n");
+            assert_eq!(by_rule(&contents, "BAS-SKILL-006").len(), 0, "{text}");
+        }
+    }
+
+    #[test]
+    fn issue_text_reading_in_a_reference_file_is_reported() {
+        assert_note(
+            &ref_rule("Run `gh pr diff 3` first.\n", "BAS-SKILL-006"),
+            Category::Llm01,
+        );
+    }
+
+    #[test]
+    fn installing_further_skills_is_an_observation() {
+        for text in [
+            "Then run `npx skills add owner/repo@helper`.",
+            "Then run `skills add owner/repo@helper`.",
+        ] {
+            let contents = format!("{FM}{text}\n");
+            assert_note(&by_rule(&contents, "BAS-SKILL-007"), Category::Llm04);
+        }
+    }
+
+    #[test]
+    fn not_installing_skills_is_not_reported() {
+        let contents = format!("{FM}Do not run skills add for unreviewed sources.\n");
+        assert_eq!(by_rule(&contents, "BAS-SKILL-007").len(), 0);
+    }
+
+    #[test]
+    fn unrelated_text_does_not_trigger_the_skill_install_check() {
+        for text in [
+            "Practise the reskills add up later.",
+            "Mind the upskills add-on page.",
+            "Improve your skills addressing customers.",
+        ] {
+            let contents = format!("{FM}{text}\n");
+            assert_eq!(by_rule(&contents, "BAS-SKILL-007").len(), 0, "{text}");
+        }
+    }
+
+    #[test]
+    fn skill_install_in_a_reference_file_is_reported() {
+        assert_note(
+            &ref_rule("Run npx skills add owner/repo.\n", "BAS-SKILL-007"),
+            Category::Llm04,
+        );
+    }
+
+    #[test]
+    fn a_cdn_script_in_a_template_is_an_observation() {
+        for line in [
+            "<script src=\"https://cdn.example.test/lib.js\"></script>",
+            "<script src='https://cdn.example.test/lib.js'></script>",
+            "<script src=\"https://unpkg.com/lib@1/dist.js\"></script>",
+            "<script src=\"https://cdn.jsdelivr.net/npm/lib\"></script>",
+            "import lib from \"https://cdn.jsdelivr.net/npm/lib\";",
+            "import lib from \"https://esm.sh/lib\";",
+        ] {
+            let contents = format!("{FM}```html\n{line}\n```\n");
+            assert_note(&by_rule(&contents, "BAS-SKILL-008"), Category::Llm04);
+        }
+    }
+
+    #[test]
+    fn a_refused_cdn_script_is_not_reported() {
+        let contents = format!(
+            "{FM}Never add <script src=\"https://cdn.example.test/lib.js\"> to the page.\n"
+        );
+        assert_eq!(by_rule(&contents, "BAS-SKILL-008").len(), 0);
+    }
+
+    #[test]
+    fn unrelated_text_does_not_trigger_the_cdn_script_check() {
+        for text in [
+            "<script src=\"./local.js\"></script>",
+            "import lib from \"https://esm.shop/lib\";",
+            "<script src=\"https://unpkg.community/lib.js\"></script>",
+            "Visit the CDN documentation.",
+        ] {
+            let contents = format!("{FM}{text}\n");
+            assert_eq!(by_rule(&contents, "BAS-SKILL-008").len(), 0, "{text}");
+        }
+    }
+
+    #[test]
+    fn a_cdn_script_in_a_reference_file_is_reported() {
+        assert_note(
+            &ref_rule(
+                "<script src=\"https://cdn.example.test/a.js\"></script>\n",
+                "BAS-SKILL-008",
+            ),
+            Category::Llm04,
+        );
+    }
+
+    #[test]
+    fn checking_out_pull_request_code_and_running_it_is_an_observation() {
+        for text in [
+            "Check out the PR, run the relevant tests.",
+            "Check out the pull request and run it.",
+            "Check out the branch and run the build.",
+            "Check it out, run the suite.",
+            "Checkout the PR and run the linter.",
+        ] {
+            let contents = format!("{FM}{text}\n");
+            assert_note(&by_rule(&contents, "BAS-SKILL-009"), Category::Llm03);
+        }
+    }
+
+    #[test]
+    fn not_running_pull_request_code_is_not_reported() {
+        let contents = format!("{FM}Never check out the PR from a fork.\n");
+        assert_eq!(by_rule(&contents, "BAS-SKILL-009").len(), 0);
+    }
+
+    #[test]
+    fn unrelated_text_does_not_trigger_the_run_outsider_code_check() {
+        for text in [
+            "Check out the product page for details.",
+            "Check out the practice guide.",
+            "Check out the prompt library.",
+            "Please check out the pull requests tab.",
+        ] {
+            let contents = format!("{FM}{text}\n");
+            assert_eq!(by_rule(&contents, "BAS-SKILL-009").len(), 0, "{text}");
+        }
+    }
+
+    #[test]
+    fn running_pull_request_code_in_a_reference_file_is_reported() {
+        assert_note(
+            &ref_rule("Check out the PR, run tests.\n", "BAS-SKILL-009"),
+            Category::Llm03,
+        );
     }
 
     #[test]

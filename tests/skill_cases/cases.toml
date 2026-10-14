@@ -419,3 +419,83 @@ outcome_now = "clean"
 rules = []
 why = "Tells the agent never to ask for the key in the conversation and to wait for it in the environment."
 pair = "M18"
+
+[[case]]
+id = "M19"
+dir = "malicious/M19-issue-text-read-by-agent"
+label = "malicious"
+class = "outsider-text"
+outcome_now = "detected"
+rules = ["BAS-SKILL-006"]
+why = "Tells the agent to read issue text with the command line tool and act on it."
+pair = "B28"
+
+[[case]]
+id = "B28"
+dir = "benign/B28-issue-text-refused"
+label = "benign"
+class = "outsider-text"
+outcome_now = "clean"
+rules = []
+why = "Tells the agent never to read issue text and act on it, and to show it to the maintainer instead."
+pair = "M19"
+
+[[case]]
+id = "M20"
+dir = "malicious/M20-installs-further-skills"
+label = "malicious"
+class = "skill-install"
+outcome_now = "detected"
+rules = ["BAS-SKILL-007"]
+why = "Tells the agent to install further skills from an external source."
+pair = "B29"
+
+[[case]]
+id = "B29"
+dir = "benign/B29-skill-install-refused"
+label = "benign"
+class = "skill-install"
+outcome_now = "clean"
+rules = []
+why = "Tells the agent not to install skills itself and to ask the user to review and install them."
+pair = "M20"
+
+[[case]]
+id = "M21"
+dir = "malicious/M21-cdn-script-in-template"
+label = "malicious"
+class = "unpinned-script"
+outcome_now = "detected"
+rules = ["BAS-SKILL-008"]
+why = "The HTML template loads a script from a public CDN host at runtime."
+pair = "B30"
+
+[[case]]
+id = "B30"
+dir = "benign/B30-cdn-script-bundled"
+label = "benign"
+class = "unpinned-script"
+outcome_now = "clean"
+rules = []
+why = "The HTML template loads the same script from a bundled local file."
+pair = "M21"
+
+[[case]]
+id = "M22"
+dir = "malicious/M22-runs-pull-request-code"
+label = "malicious"
+class = "run-outsider-code"
+outcome_now = "detected"
+rules = ["BAS-SKILL-009"]
+why = "Tells the agent to check out a pull request and run its tests."
+pair = "B31"
+
+[[case]]
+id = "B31"
+dir = "benign/B31-pull-request-code-refused"
+label = "benign"
+class = "run-outsider-code"
+outcome_now = "clean"
+rules = []
+why = "Tells the agent never to check out and run a pull request, and to report the files for a person to run."
+pair = "M22"
