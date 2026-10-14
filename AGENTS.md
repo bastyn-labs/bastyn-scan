@@ -14,7 +14,7 @@ The design rule behind everything: **say less, be right.** A missing control is 
   - `src/mcp/`: MCP server configuration checks. `src/infra/`: Dockerfile and Compose checks. `src/cve/`: dependency manifests and vulnerability lookup (`--offline` skips the network).
   - `src/finding.rs`, `src/category.rs`, `src/compliance.rs`, `src/report.rs`: the report model and the framework categories findings map to.
   - `src/render/`: text, JSON and SARIF output.
-  - `rules/*.yml`: the shipped rules (`bastyn.yml`, `secrets.yml`, `memory.yml`, `frameworks.yml`).
+  - `rules/*.yml`: the shipped rules (`bastyn.yml`, `secrets.yml`, `memory.yml`, `frameworks.yml`, `mcp_transport.yml`).
   - `tests/`: `corpus_gate.rs` (precision and recall), `rule_patterns.rs` (every rule against the fixtures), `brittleness_gate.rs` (how much a name-based rule gate costs in recall).
 - `crates/bastyn-cli/`: the `bastyn` binary. Argument parsing (`cli.rs`), rendering, exit codes (`exit.rs`). Integration tests in `tests/` drive the real binary.
 - `crates/bastyn-cli-placeholder/`: a stub crate that holds a published crate name. It is a standalone workspace; leave it alone.

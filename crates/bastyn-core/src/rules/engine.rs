@@ -471,7 +471,9 @@ impl CompiledRule {
     }
 
     /// Whether a `none_in_file` pattern matches elsewhere in the file with
-    /// the same bindings this candidate has.
+    /// the same bindings this candidate has. A pattern that shares a
+    /// metavariable this candidate did not bind cannot match it, so it does
+    /// not exclude the candidate.
     ///
     /// Only reached by candidates that passed every other gate, so the
     /// whole-file search runs on the few matches that would otherwise be
@@ -485,6 +487,9 @@ impl CompiledRule {
     /// Whether the rule's `requires_in_file` is satisfied: vacuously true when
     /// the rule declares none, otherwise at least one required pattern must
     /// match elsewhere in the file with the same bindings this candidate has.
+    /// A required pattern that shares a metavariable this candidate did not
+    /// bind cannot be satisfied by it, so such a candidate is dropped when no
+    /// other required pattern is satisfied.
     fn satisfies_file_requirement<D: Doc>(
         &self,
         root: &Node<'_, D>,
@@ -629,8 +634,11 @@ fn compile_flow(def: &RuleDef, any_vars: &HashSet<String>) -> Result<Option<Comp
 /// `vars` bound to the same text as in the candidate's `env`.
 ///
 /// Returns `None` when the candidate did not bind all of `vars` (it came from
-/// an `any` pattern that does not define them), so there is nothing to compare
-/// and the file pattern does not apply.
+/// an `any` pattern that does not define them), so there is nothing to
+/// compare. The callers treat `None` as "no match": a `none_in_file` pattern
+/// then does not exclude the candidate (it is kept), and a `requires_in_file`
+/// pattern is not satisfied (the candidate is dropped, unless another
+/// required pattern is satisfied).
 fn file_has_match<D: Doc>(
     root: &Node<'_, D>,
     env: &MetaVarEnv<'_, D>,

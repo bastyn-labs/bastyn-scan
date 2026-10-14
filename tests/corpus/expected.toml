@@ -1813,6 +1813,10 @@ file = "clean/mcp_http_local.py"
 why  = "The same server bound to 127.0.0.1 -- loopback exposes nothing to the network."
 
 [[expect_none]]
+file = "clean/mcp_http_auth.py"
+why  = "Bind-all, but the server is built with an auth= argument in the same file, so the exposure is authenticated."
+
+[[expect_none]]
 file = "clean/mcp_http_auth.ts"
 why  = "Bind-all, but requireBearerAuth is present in the file, so the exposure is authenticated."
 

@@ -6,9 +6,10 @@
 #
 # Schema: see the header of bastyn.yml.
 #
-# ZT3 is a context-dependent category, so both rules are `kind: observation`:
-# authentication is often supplied outside the file (a reverse proxy, a
-# gateway, network isolation), which the repository cannot show.
+# Both rules are `kind: observation`, although ZT3 is not a context-dependent
+# category: whether the server is authenticated is often decided outside the
+# file (a reverse proxy, a gateway, network isolation), so the missing control
+# cannot be proven wrong from the repository.
 #
 # Each rule has three parts. `any` finds the bind-all call. `requires_in_file`
 # demands a marker that the file serves MCP over HTTP, so an ordinary web
@@ -57,6 +58,10 @@ rules:
     none_in_file:
       - 'AuthSettings($$$)'
       - 'token_verifier=$_'
+      - '$_($$$, auth=$_, $$$)'
+      - '$_(auth=$_, $$$)'
+      - '$_($$$, auth=$_)'
+      - '$_(auth=$_)'
     description: >
       This file starts an MCP server over HTTP and binds it to every
       network interface (0.0.0.0), and the same file shows no

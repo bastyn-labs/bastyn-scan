@@ -1333,6 +1333,42 @@ rules:
     assert_eq!(scan_source(&rules, Path::new("s.py"), miss).len(), 0);
 }
 
+/// A candidate from an `any` pattern that does not bind a metavariable the
+/// required pattern uses has nothing to compare, so the requirement is not
+/// met and the match is dropped. `none_in_file` behaves the other way round:
+/// with nothing to compare, it does not exclude.
+#[test]
+fn requires_in_file_drops_a_candidate_that_did_not_bind_the_shared_metavariable() {
+    let yaml = r#"
+rules:
+  - id: BAS-RIF-003
+    title: t
+    kind: observation
+    severity: low
+    confidence: high
+    categories: [ZT3]
+    language: javascript
+    any:
+      - '$APP.listen($PORT, "0.0.0.0")'
+      - 'serve("0.0.0.0")'
+    requires_in_file:
+      - 'new Transport($PORT)'
+    description: d
+    remediation: r
+"#;
+    let rules = RuleSet::from_yaml(yaml).unwrap();
+    let bound = "new Transport(3000);\napp.listen(3000, \"0.0.0.0\");\n";
+    assert_eq!(scan_source(&rules, Path::new("s.ts"), bound).len(), 1);
+    let unbound = "new Transport(3000);\nserve(\"0.0.0.0\");\n";
+    assert_eq!(
+        scan_source(&rules, Path::new("s.ts"), unbound),
+        Vec::<crate::finding::Finding>::new()
+    );
+    let excluded = yaml.replace("requires_in_file", "none_in_file");
+    let rules = RuleSet::from_yaml(&excluded).unwrap();
+    assert_eq!(scan_source(&rules, Path::new("s.ts"), unbound).len(), 1);
+}
+
 #[test]
 fn requires_in_file_naming_an_unbound_metavariable_fails_to_load() {
     let yaml = REQUIRES_RULE_TS.replace("new StreamableHTTPServerTransport($$$)", "new T($OTHER)");
