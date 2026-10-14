@@ -17,6 +17,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- **Skill checks now also read text files next to a `SKILL.md`** (for example a template file beside it), not only files under `references/`. README, LICENSE, CHANGELOG and similar documentation files are skipped, and a skill at the scan root still claims only its `references/` folder.
 - **Skill phrase checks now match whole words**: a phrase no longer matches inside a longer word, and a trailing plural `s` is still accepted.
 
 ### Fixed

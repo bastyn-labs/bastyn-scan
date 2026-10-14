@@ -12,7 +12,7 @@ The figures it prints are measured on these synthetic cases only. They are not d
 
 ## Pairs (twins)
 
-Every malicious case (M01..M14 and M17..M26) has one benign twin (B11..B23, B25..B35; B11 twins M01, and so on), linked by `pair` in `cases.toml` on both sides. A twin is a copy of the malicious skill (same frontmatter shape, files, pattern position and length) with the minimal edit that makes it benign, so the only difference is intent. Twins carry a different `name:` but the same topic.
+Every malicious case (M01..M14 and M17..M27) has one benign twin (B11..B23, B25..B36; B11 twins M01, and so on), linked by `pair` in `cases.toml` on both sides. A twin is a copy of the malicious skill (same frontmatter shape, files, pattern position and length) with the minimal edit that makes it benign, so the only difference is intent. Twins carry a different `name:` but the same topic.
 
 | pair | the minimal edit in the twin |
 |---|---|
@@ -40,6 +40,7 @@ Every malicious case (M01..M14 and M17..M26) has one benign twin (B11..B23, B25.
 | M24 / B33 | the helper resolves the hostname and checks every returned address before connecting |
 | M25 / B34 | browsing is limited to an allowlist, with a question to the user for any other site |
 | M26 / B35 | the instruction to download and follow remote instructions becomes a sentence saying never to do that |
+| M27 / B36 | the template file beside the manifest changes the diagram security level from loose to strict |
 
 M23..M26 are recorded known misses (`outcome_now = "missed"`): the scanner does not analyse JavaScript dataflow (M23, M24) and has no precise textual trigger for the wording in M25 and M26. Their twins are `clean`, so these pairs are not separated.
 

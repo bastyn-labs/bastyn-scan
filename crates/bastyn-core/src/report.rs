@@ -139,9 +139,9 @@ pub struct Coverage {
     /// `SKILL.md` files that were read.
     #[serde(default)]
     pub skill_files: Vec<String>,
-    /// Text files (`.md`, `.markdown`, `.txt`) inside a skill's `references/`
-    /// folder that were read and checked for instruction-override language,
-    /// skip-confirmation language and hidden Unicode. A file that could not be
+    /// Text files of a skill that were scanned (`references/` and files next
+    /// to the manifest): `.md`, `.markdown` and `.txt` files read and checked
+    /// for the skill phrase checks and hidden Unicode. A file that could not be
     /// read is listed under `skipped` instead. Sorted by path.
     #[serde(default)]
     pub skill_reference_files: Vec<String>,

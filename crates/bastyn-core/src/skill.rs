@@ -325,13 +325,32 @@ pub fn skill_dirs(files: &[PathBuf]) -> BTreeSet<PathBuf> {
         .collect()
 }
 
-/// True if `path` is a text file (`.md`, `.markdown` or `.txt`) inside the
-/// `references/` folder of a skill whose manifest directory is in
-/// `skill_dirs`, at any depth below that folder. A manifest itself is never a
-/// reference. Only `references/` counts: the other files next to a manifest
-/// are not claimed, so a manifest at the scan root does not pull in the
-/// repository's own README or documentation. A file under the `references/`
-/// folder of several nested skills is still one file, so it is reported once.
+/// File stems (compared case-insensitively) of documentation files that are
+/// never claimed as a text file next to a manifest.
+const DOCUMENTATION_STEMS: [&str; 9] = [
+    "readme",
+    "license",
+    "licence",
+    "changelog",
+    "contributing",
+    "code_of_conduct",
+    "security",
+    "notice",
+    "authors",
+];
+
+/// True if `path` is a text file (`.md`, `.markdown` or `.txt`) that a skill
+/// whose manifest directory is in `skill_dirs` owns, in one of two places:
+///
+/// - anywhere below the skill's `references/` folder, at any depth;
+/// - directly beside the manifest (a direct child of the skill directory, not
+///   a deeper one), unless its file stem names a documentation file
+///   (`README`, `LICENSE`, `CHANGELOG` and similar, any case).
+///
+/// A manifest itself is never a reference. A skill at the scan root (the empty
+/// directory) claims only its `references/` folder, so the repository's own
+/// README and documentation are not pulled in. A file claimed by several
+/// nested skills is still one file, so it is reported once.
 #[must_use]
 pub fn is_skill_reference(path: &Path, skill_dirs: &BTreeSet<PathBuf>) -> bool {
     if is_skill_file(path) {
@@ -345,17 +364,29 @@ pub fn is_skill_reference(path: &Path, skill_dirs: &BTreeSet<PathBuf>) -> bool {
                 .iter()
                 .any(|text| extension.eq_ignore_ascii_case(text))
         });
-    is_text
-        && skill_dirs
-            .iter()
-            .any(|dir| path.starts_with(dir.join("references")))
+    if !is_text {
+        return false;
+    }
+    let is_documentation = path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .is_some_and(|stem| {
+            DOCUMENTATION_STEMS
+                .iter()
+                .any(|name| stem.eq_ignore_ascii_case(name))
+        });
+    skill_dirs.iter().any(|dir| {
+        path.starts_with(dir.join("references"))
+            || (!dir.as_os_str().is_empty() && !is_documentation && path.parent() == Some(dir))
+    })
 }
 
 /// Inspect one file already recognised by [`is_skill_reference`]: the
 /// `BAS-SKILL-002` to `BAS-SKILL-009` phrase checks, with the same context
 /// filter as a manifest, and the hidden-Unicode check (`BAS-LLM01-001`).
-/// The frontmatter check (`BAS-SKILL-001`) is never applied, because a
-/// reference file is not a manifest.
+/// That covers a text file under a skill's `references/` folder and a text
+/// file beside the manifest. The frontmatter check (`BAS-SKILL-001`) is never
+/// applied, because such a file is not a manifest.
 #[must_use]
 pub fn inspect_reference(relative_path: &Path, contents: &str) -> Vec<Finding> {
     let mut findings = crate::instructions::inspect_text(relative_path, contents);
@@ -2350,11 +2381,40 @@ mod tests {
     }
 
     #[test]
+    fn a_text_file_beside_a_manifest_is_a_reference_unless_it_is_documentation() {
+        let dirs = skill_dirs(&[PathBuf::from("a/SKILL.md")]);
+        assert!(is_skill_reference(Path::new("a/REPORT.md"), &dirs));
+        assert!(is_skill_reference(Path::new("a/template.TXT"), &dirs));
+        assert!(!is_skill_reference(Path::new("a/image.png"), &dirs));
+        assert!(!is_skill_reference(Path::new("a/sub/NOTES.md"), &dirs));
+        for name in [
+            "README.md",
+            "readme.txt",
+            "LICENSE.txt",
+            "Licence.md",
+            "CHANGELOG.md",
+            "CONTRIBUTING.md",
+            "CODE_OF_CONDUCT.md",
+            "SECURITY.md",
+            "NOTICE.txt",
+            "AUTHORS",
+        ] {
+            let path = Path::new("a").join(name);
+            assert!(!is_skill_reference(&path, &dirs), "{name}");
+        }
+        assert!(is_skill_reference(
+            Path::new("a/references/README.md"),
+            &dirs
+        ));
+    }
+
+    #[test]
     fn a_root_level_skill_does_not_claim_the_repository_docs() {
         let dirs = skill_dirs(&[PathBuf::from("SKILL.md")]);
         assert!(is_skill_reference(Path::new("references/x.md"), &dirs));
         assert!(!is_skill_reference(Path::new("docs/guide.md"), &dirs));
         assert!(!is_skill_reference(Path::new("README.md"), &dirs));
+        assert!(!is_skill_reference(Path::new("NOTES.md"), &dirs));
     }
 
     #[test]

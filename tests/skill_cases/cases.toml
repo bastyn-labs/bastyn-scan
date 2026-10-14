@@ -579,3 +579,23 @@ outcome_now = "clean"
 rules = []
 why = "Reads the bundled instructions and says never to download instructions from a URL."
 pair = "M26"
+
+[[case]]
+id = "M27"
+dir = "malicious/M27-sibling-template-loose-level"
+label = "malicious"
+class = "sibling-file"
+outcome_now = "detected"
+rules = ["BAS-SKILL-004"]
+why = "The skill tells the agent to use a template file beside the manifest, and that file starts the diagram library with its loose security level."
+pair = "B36"
+
+[[case]]
+id = "B36"
+dir = "benign/B36-sibling-template-strict-level"
+label = "benign"
+class = "sibling-file"
+outcome_now = "clean"
+rules = []
+why = "The same template file starts the diagram library with its strict security level."
+pair = "M27"

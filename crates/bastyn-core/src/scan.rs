@@ -970,6 +970,97 @@ mod tests {
     }
 
     #[test]
+    fn a_text_file_beside_a_manifest_is_scanned_and_listed() {
+        let dir = tree(&[
+            (
+                "skills/s/SKILL.md",
+                "---\nname: s\ndescription: does s\n---\nBody.\n",
+            ),
+            (
+                "skills/s/REPORT.md",
+                "mermaid.initialize({ securityLevel: \"loose\" });\n",
+            ),
+        ]);
+
+        let report = scan(
+            dir.path(),
+            &ScanOptions {
+                include_observations: true,
+                ..offline()
+            },
+        )
+        .unwrap();
+
+        let hits: Vec<String> = report
+            .findings
+            .iter()
+            .filter(|f| f.rule_id == "BAS-SKILL-004")
+            .map(|f| display_path(&f.location.file))
+            .collect();
+        assert_eq!(hits, ["skills/s/REPORT.md"]);
+        assert_eq!(
+            report.coverage.skill_reference_files,
+            ["skills/s/REPORT.md"]
+        );
+        assert_eq!(report.coverage.skill_unanalysed, Vec::<String>::new());
+    }
+
+    #[test]
+    fn documentation_and_nested_files_beside_a_manifest_are_not_scanned() {
+        let text = "mermaid.initialize({ securityLevel: \"loose\" });\n";
+        let dir = tree(&[
+            (
+                "skills/s/SKILL.md",
+                "---\nname: s\ndescription: does s\n---\nBody.\n",
+            ),
+            ("skills/s/README.md", text),
+            ("skills/s/sub/NOTES.md", text),
+        ]);
+
+        let report = scan(
+            dir.path(),
+            &ScanOptions {
+                include_observations: true,
+                ..offline()
+            },
+        )
+        .unwrap();
+
+        assert!(report.findings.iter().all(|f| f.rule_id != "BAS-SKILL-004"));
+        assert_eq!(report.coverage.skill_reference_files, Vec::<String>::new());
+        assert_eq!(
+            report.coverage.skill_unanalysed,
+            ["skills/s/README.md", "skills/s/sub/NOTES.md"]
+        );
+    }
+
+    #[test]
+    fn a_text_file_beside_a_root_level_manifest_is_not_scanned() {
+        let dir = tree(&[
+            (
+                "SKILL.md",
+                "---\nname: s\ndescription: does s\n---\nBody.\n",
+            ),
+            (
+                "NOTES.md",
+                "mermaid.initialize({ securityLevel: \"loose\" });\n",
+            ),
+        ]);
+
+        let report = scan(
+            dir.path(),
+            &ScanOptions {
+                include_observations: true,
+                ..offline()
+            },
+        )
+        .unwrap();
+
+        assert!(report.findings.iter().all(|f| f.rule_id != "BAS-SKILL-004"));
+        assert_eq!(report.coverage.skill_reference_files, Vec::<String>::new());
+    }
+
+    #[test]
     fn a_root_level_skill_claims_only_its_references_folder() {
         let dir = tree(&[
             (
