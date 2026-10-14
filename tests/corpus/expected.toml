@@ -1692,3 +1692,7 @@ category = "ZT1"
 kind     = "defect"
 severity = "critical"
 why      = "a URL whose query string carries a credential is a hardcoded secret"
+
+[[expect_none]]
+file = "clean/zt1_dummy_fixture_keys.ts"
+why  = "provider-key-shaped literals whose text says they are dummy secrets that must not leak"

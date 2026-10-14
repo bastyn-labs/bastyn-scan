@@ -1672,9 +1672,11 @@ rules:
     # Deliberately does not touch `SECRET`'s own regex: a real key with real
     # entropy (vulnerable/zt1_static_credentials.ts) contains none of these
     # words and still fires, proving this is an exception for placeholders,
-    # not a general weakening.
+    # not a general weakening. Dummy fixture values also often spell out that
+    # they are secret or must not leak; real keys are random and do not
+    # contain those words.
     metavariable_not_matches:
-      SECRET: "(?i)(test|example|placeholder|dummy|foo|changeme|your[-_]?key[-_]?here|local|xxx|0{8,}|1{8,})"
+      SECRET: "(?i)(test|example|placeholder|dummy|foo|secret|leak|changeme|your[-_]?key[-_]?here|local|xxx|0{8,}|1{8,})"
     description: >
       A provider API key is a literal in source rather than read from the
       environment or a secret manager. It ships with every clone of the

@@ -559,3 +559,26 @@ fn generic_credential_rule_agrees_with_credential_module_on_placeholders() {
         );
     }
 }
+
+#[test]
+fn bas_zt1_003_ignores_dummy_values_that_say_they_are_secret_or_leaks() {
+    let ruleset = ruleset();
+    for source in [
+        "process.env[\"CODEX_API_KEY\"] = \"sk-supersecret-DO-NOT-LEAK\";\n",
+        "process.env[\"AGENT\"] = \"sk-ant-api03-THIS-IS-A-LONG-SECRET-LOOKING-VALUE-xyz\";\n",
+    ] {
+        let findings = scan_source(&ruleset, Path::new("src/agent.test.ts"), source);
+        assert!(
+            !ids(&findings).contains(&"BAS-ZT1-003"),
+            "{source}: {findings:?}"
+        );
+    }
+}
+
+#[test]
+fn bas_zt1_003_still_flags_a_random_looking_provider_key() {
+    let ruleset = ruleset();
+    let source = "const key = \"sk-proj-7Hq2LmZx9TrVb4Nc8WdYe3Ka\";\n";
+    let findings = scan_source(&ruleset, Path::new("src/client.ts"), source);
+    assert!(ids(&findings).contains(&"BAS-ZT1-003"), "{findings:?}");
+}

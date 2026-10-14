@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **`BAS-ZT1-003` no longer reports a provider-key-shaped literal that contains the word `secret` or `leak`**, such as the dummy values used in test fixtures. A random-looking key is still reported.
+
 ## [0.4.0] - 2026-10-14
 
 ### Added
