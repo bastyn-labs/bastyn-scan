@@ -36,6 +36,8 @@ allow = [
   "CDLA-Permissive-2.0",
   # subtle, via rustls. Permissive, no copyleft obligation.
   "BSD-3-Clause",
+  # foldhash, via serde_json. Permissive, no copyleft obligation.
+  "Zlib",
 ]
 exceptions = []
 
