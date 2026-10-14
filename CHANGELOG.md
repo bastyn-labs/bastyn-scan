@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **New checks `BAS-MCP-010` to `BAS-MCP-012` run on tools snapshot files (`*.bastyn-tools.json`)**: hidden Unicode in tool text, hidden-instruction markers, and instruction-override phrases.
+- **`bastyn inspect-server`**, an explicit command that connects to an MCP server over Streamable HTTP or stdio and writes its tool list to a snapshot file. `bastyn scan` itself still makes no connection to MCP servers.
+
 ## [0.5.0] - 2026-10-14
 
 ### Added
@@ -17,8 +22,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **`BAS-SKILL-007` reports a skill that tells the agent to install further skills** (`npx skills add ...`), which extends the set of instructions the agent trusts. Observation only; skipped when the text refuses it.
 - **`BAS-SKILL-008` reports a skill template that loads a script from a public CDN host**, so the page it produces runs code the skill does not pin. Observation only; skipped when the text refuses it.
 - **`BAS-SKILL-009` reports a skill that tells the agent to check out a pull request and run it**, which executes code the agent did not write. Observation only; skipped when the text refuses it.
-- **New checks `BAS-MCP-010` to `BAS-MCP-012` run on tools snapshot files (`*.bastyn-tools.json`)**: hidden Unicode in tool text, hidden-instruction markers, and instruction-override phrases.
-- **`bastyn inspect-server`**, an explicit command that connects to an MCP server over Streamable HTTP or stdio and writes its tool list to a snapshot file. `bastyn scan` itself still makes no connection to MCP servers.
 - **Rule files: a rule may declare `requires_in_file`**, the positive counterpart of `none_in_file`: a match is kept only when one of the listed patterns also matches somewhere in the same file, with shared metavariables bound to the same text. It cannot be combined with `flow.sink`.
 - **MCP configuration: new check `BAS-MCP-006`** for shell-wrapper launchers (`sh -c`, `bash -c`, `cmd /c`, `powershell -Command`) that download and run code; root-path and version-pin checks now also apply to a registry launcher inside such a wrapper.
 - **MCP configuration: new checks `BAS-MCP-007`** (container launched with `--privileged` or the Docker socket mounted) **and `BAS-MCP-008`** (host network, reported as an observation). `BAS-MCP-001` now also flags a root or home bind mount.
