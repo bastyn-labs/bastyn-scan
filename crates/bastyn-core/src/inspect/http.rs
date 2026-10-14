@@ -165,7 +165,7 @@ fn decode(reply: &HttpReply, id: u64) -> Option<Reply> {
 }
 
 /// The tool definitions of one `tools/list` result.
-fn tools_of(result: &Value) -> Result<Vec<Value>, InspectError> {
+pub(super) fn tools_of(result: &Value) -> Result<Vec<Value>, InspectError> {
     result
         .get("tools")
         .and_then(Value::as_array)
@@ -173,7 +173,7 @@ fn tools_of(result: &Value) -> Result<Vec<Value>, InspectError> {
         .ok_or_else(|| InspectError::Protocol("the tools/list result has no `tools` array".into()))
 }
 
-fn error_text(code: i64, message: &str, data: Option<&Value>) -> String {
+pub(super) fn error_text(code: i64, message: &str, data: Option<&Value>) -> String {
     match data.and_then(|data| data.get("supported")) {
         Some(supported) => {
             format!("the server returned error {code}: {message} (supported versions: {supported})")

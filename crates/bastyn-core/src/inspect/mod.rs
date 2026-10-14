@@ -2,7 +2,8 @@
 //!
 //! This module holds the pieces shared by the transports: the snapshot file
 //! format, the guard that refuses unsafe addresses, the JSON-RPC message
-//! builders, the Server-Sent Events reader, and the Streamable HTTP client.
+//! builders, the Server-Sent Events reader, the Streamable HTTP client, and the stdio
+//! client.
 
 use std::time::Duration;
 
@@ -12,10 +13,12 @@ mod http;
 pub(crate) mod jsonrpc;
 pub mod snapshot;
 pub(crate) mod sse;
+mod stdio;
 
 pub use error::InspectError;
 pub use http::{HttpTarget, capture_http};
 pub use snapshot::{SNAPSHOT_SCHEMA, ServerInfo, Snapshot};
+pub use stdio::{StdioTarget, capture_stdio};
 
 /// Time, size and page caps applied to every capture.
 ///
