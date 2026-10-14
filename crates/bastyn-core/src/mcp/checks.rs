@@ -6,6 +6,7 @@ use std::path::Path;
 
 use crate::category::Category;
 use crate::finding::{Confidence, Finding, Kind, Location, Severity};
+use crate::infra::DOCKER_SOCKET;
 
 use super::launch::{launch_commands, pipes_download_into_shell, shell_script};
 use super::model::{McpConfig, ServerEntry};
@@ -27,6 +28,7 @@ pub(crate) fn run_all(config: &McpConfig, relative_path: &Path, contents: &str) 
         ));
         findings.extend(check_unpinned_server(name, entry, relative_path, contents));
         findings.extend(check_shell_wrapper(name, entry, relative_path, contents));
+        findings.extend(check_docker_launch(name, entry, relative_path, contents));
         findings.extend(check_unauthenticated_http(
             name,
             entry,
@@ -180,6 +182,185 @@ fn is_home_directory_root(path: &str) -> bool {
     } else {
         false
     }
+}
+
+/// What a `docker run` / `podman run` command line asks for.
+#[derive(Default)]
+struct DockerOptions {
+    privileged: bool,
+    host_network: bool,
+    /// Host-side source of every bind mount.
+    mount_sources: Vec<String>,
+}
+
+/// Read the isolation-relevant options from the arguments after `run`.
+///
+/// Every argument after `run` is examined, including ones after the image
+/// name. An argument such as `--privileged` that belongs to the container's
+/// own command line would be misread, which is accepted: it is rare, and the
+/// opposite choice (guessing where the image name ends from a hand-kept list
+/// of value-taking flags) would silently miss real flags.
+fn docker_options(args: &[String]) -> DockerOptions {
+    let mut options = DockerOptions::default();
+    let mut index = 0;
+    while index < args.len() {
+        let arg = args[index].as_str();
+        let next = args.get(index + 1).map(String::as_str);
+        match arg {
+            "--privileged" | "--privileged=true" => options.privileged = true,
+            "--network" | "--net" if next == Some("host") => options.host_network = true,
+            "--network=host" | "--net=host" => options.host_network = true,
+            "-v" | "--volume" => {
+                if let Some(volume) = next {
+                    options.mount_sources.push(volume_source(volume));
+                }
+            }
+            "--mount" => {
+                if let Some(spec) = next {
+                    options.mount_sources.extend(mount_source(spec));
+                }
+            }
+            _ => {
+                if let Some(volume) = arg.strip_prefix("--volume=") {
+                    options.mount_sources.push(volume_source(volume));
+                } else if let Some(spec) = arg.strip_prefix("--mount=") {
+                    options.mount_sources.extend(mount_source(spec));
+                }
+            }
+        }
+        index += 1;
+    }
+    options
+}
+
+/// The host-side part of a `-v source:target[:mode]` value.
+fn volume_source(volume: &str) -> String {
+    volume.split(':').next().unwrap_or_default().to_owned()
+}
+
+/// The `src=` / `source=` value of a `--mount` spec.
+fn mount_source(spec: &str) -> Option<String> {
+    spec.split(',').find_map(|part| {
+        let (key, value) = part.split_once('=')?;
+        matches!(key.trim(), "src" | "source").then(|| value.trim().to_owned())
+    })
+}
+
+/// `BAS-MCP-001` (bind mounts), `BAS-MCP-007` and `BAS-MCP-008`: what a
+/// container launcher asks of the host.
+///
+/// A root or home bind mount is the container form of the broad filesystem
+/// grant `BAS-MCP-001` already reports. `--privileged` and the Docker socket
+/// are the same evidence the Compose checks `BAS-INFRA-003`/`-004` use.
+/// Host networking is an observation, as `BAS-INFRA-005` is: it is how many
+/// legitimate sidecars run, and the repository cannot show it is wrong here.
+fn check_docker_launch(
+    name: &str,
+    entry: &ServerEntry,
+    relative_path: &Path,
+    contents: &str,
+) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    for command in launch_commands(entry) {
+        if !matches!(command.program.as_str(), "docker" | "podman" | "nerdctl") {
+            continue;
+        }
+        let Some(run_at) = command.args.iter().position(|arg| arg == "run") else {
+            continue;
+        };
+        let options = docker_options(&command.args[run_at + 1..]);
+
+        if let Some(source) = options
+            .mount_sources
+            .iter()
+            .find(|source| is_broad_filesystem_path(source))
+        {
+            let (line, snippet) = locate(contents, source);
+            findings.push(Finding {
+                rule_id: "BAS-MCP-001".to_string(),
+                title: "MCP server granted root or broad filesystem access".to_string(),
+                kind: Kind::Defect,
+                severity: Severity::High,
+                confidence: Confidence::High,
+                categories: vec![Category::Zt3],
+                location: location(relative_path, line),
+                snippet,
+                description: format!(
+                    "Server `{name}` runs a container with `{source}` bind-mounted from the host, \
+                     granting it the filesystem root or an entire home directory rather than a \
+                     scoped path."
+                ),
+                remediation: "Mount only the narrowest directory the server needs, read-only \
+                     where possible."
+                    .to_string(),
+                secondary_rule_ids: Vec::new(),
+                references: Vec::new(),
+            });
+        }
+
+        let socket = options
+            .mount_sources
+            .iter()
+            .any(|source| source == DOCKER_SOCKET || source == "/run/docker.sock");
+        if options.privileged || socket {
+            let (needle, what) = if options.privileged {
+                (
+                    "--privileged",
+                    "`--privileged`, which removes the container's capability, seccomp and \
+                     device restrictions",
+                )
+            } else {
+                (
+                    "docker.sock",
+                    "the Docker socket, which is full control of the Docker daemon",
+                )
+            };
+            let (line, snippet) = locate(contents, needle);
+            findings.push(Finding {
+                rule_id: "BAS-MCP-007".to_string(),
+                title: "MCP server container escapes its isolation".to_string(),
+                kind: Kind::Defect,
+                severity: Severity::High,
+                confidence: Confidence::High,
+                categories: vec![Category::Zt3],
+                location: location(relative_path, line),
+                snippet,
+                description: format!(
+                    "Server `{name}` is launched with {what}. Anything the server runs, including \
+                     a tool an agent chooses to call, can reach the host."
+                ),
+                remediation: "Drop the option. Grant a specific capability or device instead, or \
+                     put a scoped proxy in front of the daemon."
+                    .to_string(),
+                secondary_rule_ids: Vec::new(),
+                references: Vec::new(),
+            });
+        }
+
+        if options.host_network {
+            let (line, snippet) = locate(contents, "--net");
+            findings.push(Finding {
+                rule_id: "BAS-MCP-008".to_string(),
+                title: "MCP server container shares the host network".to_string(),
+                kind: Kind::Observation,
+                severity: Severity::Medium,
+                confidence: Confidence::High,
+                categories: vec![Category::Zt3],
+                location: location(relative_path, line),
+                snippet,
+                description: format!(
+                    "Server `{name}` runs a container on the host network namespace, so it can \
+                     reach services bound to the host's loopback interface."
+                ),
+                remediation: "Use a bridge network and publish only the ports the server needs, \
+                     unless host networking is required."
+                    .to_string(),
+                secondary_rule_ids: Vec::new(),
+                references: Vec::new(),
+            });
+        }
+    }
+    findings
 }
 
 /// `BAS-MCP-002` — an MCP server reached over unauthenticated plaintext
@@ -876,6 +1057,107 @@ mod tests {
 
     fn server(json: &str) -> ServerEntry {
         serde_json::from_str(json).unwrap()
+    }
+
+    fn docker(args: &str) -> ServerEntry {
+        server(&format!(r#"{{"command": "docker", "args": {args}}}"#))
+    }
+
+    fn ids(findings: &[Finding]) -> Vec<&str> {
+        findings.iter().map(|f| f.rule_id.as_str()).collect()
+    }
+
+    #[test]
+    fn check_007_flags_privileged_and_the_docker_socket() {
+        let privileged = docker(r#"["run", "--rm", "-i", "--privileged", "img@sha256:1"]"#);
+        assert_eq!(
+            ids(&check_docker_launch(
+                "d",
+                &privileged,
+                Path::new("mcp.json"),
+                "--privileged"
+            )),
+            ["BAS-MCP-007"]
+        );
+        let sock =
+            docker(r#"["run", "-v", "/var/run/docker.sock:/var/run/docker.sock", "img@sha256:1"]"#);
+        assert_eq!(
+            ids(&check_docker_launch(
+                "d",
+                &sock,
+                Path::new("mcp.json"),
+                "docker.sock"
+            )),
+            ["BAS-MCP-007"]
+        );
+        let sock_mount = docker(
+            r#"["run", "--mount", "type=bind,src=/var/run/docker.sock,dst=/s", "img@sha256:1"]"#,
+        );
+        assert_eq!(
+            ids(&check_docker_launch(
+                "d",
+                &sock_mount,
+                Path::new("mcp.json"),
+                "docker.sock"
+            )),
+            ["BAS-MCP-007"]
+        );
+    }
+
+    #[test]
+    fn check_001_extension_flags_a_root_or_home_bind_mount() {
+        for args in [
+            r#"["run", "-v", "/:/host", "img@sha256:1"]"#,
+            r#"["run", "--volume=/home/alice:/h", "img@sha256:1"]"#,
+            r#"["run", "--mount", "type=bind,source=$HOME,target=/h", "img@sha256:1"]"#,
+        ] {
+            let findings = check_docker_launch("d", &docker(args), Path::new("mcp.json"), "{}");
+            assert_eq!(ids(&findings), ["BAS-MCP-001"], "{args}");
+        }
+    }
+
+    #[test]
+    fn check_008_flags_host_network_as_an_observation() {
+        for args in [
+            r#"["run", "--network", "host", "img@sha256:1"]"#,
+            r#"["run", "--net=host", "img@sha256:1"]"#,
+        ] {
+            let findings =
+                check_docker_launch("d", &docker(args), Path::new("mcp.json"), "--network");
+            assert_eq!(ids(&findings), ["BAS-MCP-008"], "{args}");
+            assert_eq!(findings[0].kind, Kind::Observation);
+        }
+    }
+
+    #[test]
+    fn docker_near_misses_are_quiet() {
+        for args in [
+            r#"["run", "--rm", "-i", "-v", "/srv/data:/data", "img@sha256:1"]"#,
+            r#"["run", "--network=bridge", "img@sha256:1"]"#,
+            r#"["run", "--privileged=false", "img@sha256:1"]"#,
+            r#"["ps"]"#,
+        ] {
+            assert!(
+                check_docker_launch("d", &docker(args), Path::new("mcp.json"), "{}").is_empty(),
+                "{args}"
+            );
+        }
+    }
+
+    #[test]
+    fn docker_inside_a_shell_wrapper_is_still_seen() {
+        let entry = server(
+            r#"{"command": "sh", "args": ["-c", "docker run --rm -i --privileged img@sha256:1"]}"#,
+        );
+        assert_eq!(
+            ids(&check_docker_launch(
+                "d",
+                &entry,
+                Path::new("mcp.json"),
+                "--privileged"
+            )),
+            ["BAS-MCP-007"]
+        );
     }
 
     #[test]

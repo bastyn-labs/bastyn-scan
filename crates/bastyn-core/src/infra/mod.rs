@@ -54,6 +54,8 @@
 mod compose;
 mod dockerfile;
 
+pub(crate) use compose::DOCKER_SOCKET;
+
 use std::path::Path;
 
 use crate::finding::Finding;

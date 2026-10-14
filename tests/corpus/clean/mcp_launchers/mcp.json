@@ -24,6 +24,18 @@
     "download-to-jq": {
       "command": "sh",
       "args": ["-c", "curl -fsS https://example.com/health | jq ."]
+    },
+    "scoped-mount": {
+      "command": "docker",
+      "args": ["run", "--rm", "-i", "-v", "/srv/data:/data", "img@sha256:0123"]
+    },
+    "bridge-network": {
+      "command": "docker",
+      "args": ["run", "--rm", "-i", "--network=bridge", "img@sha256:0123"]
+    },
+    "not-privileged": {
+      "command": "docker",
+      "args": ["run", "--rm", "-i", "--privileged=false", "img@sha256:0123"]
     }
   }
 }

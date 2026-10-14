@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "sock": {
+      "command": "docker",
+      "args": ["run", "--rm", "-i", "-v", "/var/run/docker.sock:/var/run/docker.sock", "img@sha256:0123"]
+    },
+    "rootmount": {
+      "command": "docker",
+      "args": ["run", "--rm", "-i", "-v", "/:/host", "img@sha256:0123"]
+    },
+    "privileged": {
+      "command": "podman",
+      "args": ["run", "--rm", "-i", "--privileged", "img@sha256:0123"]
+    },
+    "hostnet": {
+      "command": "docker",
+      "args": ["run", "--rm", "-i", "--network", "host", "img@sha256:0123"]
+    }
+  }
+}

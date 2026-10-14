@@ -15,6 +15,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **`BAS-SKILL-008` reports a skill template that loads a script from a public CDN host**, so the page it produces runs code the skill does not pin. Observation only; skipped when the text refuses it.
 - **`BAS-SKILL-009` reports a skill that tells the agent to check out a pull request and run it**, which executes code the agent did not write. Observation only; skipped when the text refuses it.
 - **MCP configuration: new check `BAS-MCP-006`** for shell-wrapper launchers (`sh -c`, `bash -c`, `cmd /c`, `powershell -Command`) that download and run code; root-path and version-pin checks now also apply to a registry launcher inside such a wrapper.
+- **MCP configuration: new checks `BAS-MCP-007`** (container launched with `--privileged` or the Docker socket mounted) **and `BAS-MCP-008`** (host network, reported as an observation). `BAS-MCP-001` now also flags a root or home bind mount.
 - **MCP configuration: new check `BAS-MCP-009`** for a literal credential in a server URL's query string. A server entry's optional `type` / `transport` key is now read; it never causes a config to be reported as invalid.
 
 ### Changed

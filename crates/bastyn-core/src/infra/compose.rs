@@ -12,7 +12,7 @@ use crate::mcp::checks::locate;
 
 /// The one host path that is a container escape wherever it is mounted:
 /// writing to it drives the Docker daemon, which runs as root on the host.
-const DOCKER_SOCKET: &str = "/var/run/docker.sock";
+pub(crate) const DOCKER_SOCKET: &str = "/var/run/docker.sock";
 
 /// Run every Compose check against every service, in service-name order so
 /// two runs over one file always produce findings in the same order.

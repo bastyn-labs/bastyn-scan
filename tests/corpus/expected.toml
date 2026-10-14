@@ -1749,3 +1749,39 @@ category = "LLM04"
 kind     = "defect"
 severity = "high"
 why      = "curl ... | sh inside sh -c: code fetched at launch and run with no pin."
+
+[[expect]]
+file     = "mcp/docker_launchers/mcp.json"
+line     = 5
+rule     = "BAS-MCP-007"
+category = "ZT3"
+kind     = "defect"
+severity = "high"
+why      = "The Docker socket is bind-mounted into the server's container: full control of the daemon."
+
+[[expect]]
+file     = "mcp/docker_launchers/mcp.json"
+line     = 5
+rule     = "BAS-MCP-001"
+category = "ZT3"
+kind     = "defect"
+severity = "high"
+why      = "The root bind mount \"/:/host\" in the rootmount server. The reported line is the first line containing the source text \"/\", which is the sock server's args line (documented approximate-location behaviour)."
+
+[[expect]]
+file     = "mcp/docker_launchers/mcp.json"
+line     = 13
+rule     = "BAS-MCP-007"
+category = "ZT3"
+kind     = "defect"
+severity = "high"
+why      = "podman run --privileged."
+
+[[expect]]
+file     = "mcp/docker_launchers/mcp.json"
+line     = 17
+rule     = "BAS-MCP-008"
+category = "ZT3"
+kind     = "observation"
+severity = "medium"
+why      = "docker run --network host. Host networking is a legitimate sidecar pattern, so an observation."
