@@ -8,6 +8,22 @@
     },
     "plain-query": {
       "url": "https://metrics.example.com/mcp?region=eu-west-1&page=2"
+    },
+    "plain-wrapper": {
+      "command": "sh",
+      "args": ["-c", "exec node server.js"]
+    },
+    "download-not-run": {
+      "command": "bash",
+      "args": ["-c", "curl -o f https://example.com/x && sha256sum -c f.sum"]
+    },
+    "logical-or": {
+      "command": "sh",
+      "args": ["-c", "curl -fsS https://example.com/health || echo down"]
+    },
+    "download-to-jq": {
+      "command": "sh",
+      "args": ["-c", "curl -fsS https://example.com/health | jq ."]
     }
   }
 }

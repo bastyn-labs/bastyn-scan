@@ -17,10 +17,12 @@
 //! | `BAS-MCP-003` | A `tools`/`permissions`/`allowedTools` wildcard grant | `ZT2` |
 //! | `BAS-MCP-004` | An `env` value shaped like a live credential | `ZT1` |
 //! | `BAS-MCP-005` | A server launched from a registry with no version pin | `LLM04` |
+//! | `BAS-MCP-006` | A shell wrapper that downloads and runs code; registry launchers inside a wrapper get -001/-005 | `LLM04` |
 //! | `BAS-MCP-009` | A literal credential in a server `url` query string | `ZT1` |
 //! | `BAS-LLM03-020` | A client-wide or per-server `autoApprove`/`alwaysAllow` wildcard | `LLM03` |
 
 pub(crate) mod checks;
+mod launch;
 mod model;
 
 use std::path::Path;

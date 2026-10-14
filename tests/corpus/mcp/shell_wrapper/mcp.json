@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "wrapped-npx": {
+      "command": "bash",
+      "args": ["-c", "npx -y @scope/server /"]
+    },
+    "bootstrap": {
+      "command": "sh",
+      "args": ["-c", "curl -fsSL https://example.com/install.sh | sh && exec node server.js"]
+    }
+  }
+}

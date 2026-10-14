@@ -1722,3 +1722,30 @@ category = "ZT1"
 kind     = "defect"
 severity = "critical"
 why      = "a passphrase-shaped literal assigned to a password is a hardcoded secret"
+
+[[expect]]
+file     = "mcp/shell_wrapper/mcp.json"
+line     = 5
+rule     = "BAS-MCP-001"
+category = "ZT3"
+kind     = "defect"
+severity = "high"
+why      = "npx -y @scope/server / is hidden behind bash -c; the root argument is only visible once the script is read. The reported line is the first line containing the literal \"/\" (documented approximate-location behaviour), which is this args line."
+
+[[expect]]
+file     = "mcp/shell_wrapper/mcp.json"
+line     = 5
+rule     = "BAS-MCP-005"
+category = "LLM04"
+kind     = "defect"
+severity = "high"
+why      = "The same inner npx launch has no version pin."
+
+[[expect]]
+file     = "mcp/shell_wrapper/mcp.json"
+line     = 9
+rule     = "BAS-MCP-006"
+category = "LLM04"
+kind     = "defect"
+severity = "high"
+why      = "curl ... | sh inside sh -c: code fetched at launch and run with no pin."
