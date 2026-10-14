@@ -599,3 +599,23 @@ outcome_now = "clean"
 rules = []
 why = "The same template file starts the diagram library with its strict security level."
 pair = "M27"
+
+[[case]]
+id = "M28"
+dir = "malicious/M28-js-install-with-built-arguments"
+label = "malicious"
+class = "js-code-known-gap"
+outcome_now = "missed"
+rules = []
+why = "The install command and its arguments are held in variables before the spawn call, so the literal-shape install rule does not match; detecting it needs JavaScript dataflow."
+pair = "B37"
+
+[[case]]
+id = "B37"
+dir = "benign/B37-js-no-runtime-install"
+label = "benign"
+class = "js-code-known-gap"
+outcome_now = "clean"
+rules = []
+why = "The helper script installs nothing and reports where the packages are declared."
+pair = "M28"

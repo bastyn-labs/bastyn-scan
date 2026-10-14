@@ -1827,3 +1827,29 @@ why  = "Listening on 0.0.0.0 with no MCP transport in the file -- an ordinary we
 [[expect_none]]
 file = "clean/mcp_stdio_server.py"
 why  = "A stdio MCP server: no network listener at all."
+
+# ---------------------------------------------------------------------
+# LLM04: a package-manager install started as a child process.
+# ---------------------------------------------------------------------
+
+[[expect]]
+file     = "vulnerable/llm04_runtime_package_install.js"
+line     = 5
+rule     = "BAS-LLM04-002"
+category = "LLM04"
+kind     = "observation"
+severity = "low"
+why      = "spawnSync runs npm install while the code runs"
+
+[[expect]]
+file     = "vulnerable/llm04_runtime_package_install.js"
+line     = 9
+rule     = "BAS-LLM04-002"
+category = "LLM04"
+kind     = "observation"
+severity = "low"
+why      = "execSync runs pnpm add while the code runs"
+
+[[expect_none]]
+file = "clean/llm04_runtime_install_near_misses.js"
+why  = "npm run and npm ci spawns, npm test, git add, require(\"npm\"), and install only inside strings and comments"

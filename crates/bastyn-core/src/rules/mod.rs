@@ -60,6 +60,9 @@ mod tests_memory;
 #[cfg(test)]
 mod tests_secrets;
 
+#[cfg(test)]
+mod tests_supply_chain;
+
 pub(crate) use engine::SourceLanguage;
 pub use engine::{RuleSet, ScanOutcome, scan_source, scan_source_checked};
 pub use error::{Result, RuleError};

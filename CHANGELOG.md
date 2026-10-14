@@ -8,6 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **`BAS-LLM04-002` reports JavaScript or TypeScript that runs a package-manager install as a child process**, such as `spawnSync("npm", ["install", ...])`, because the code then fetches third-party code at runtime. Observation only.
 - **`BAS-SKILL-004` reports a skill that tells the agent to start a diagram library with its `loose` security level**, which lets diagram text run scripts. It is an observation (shown with `--show-observations`) and is skipped when the text is refusing it.
 - **`BAS-SKILL-005` reports a skill that tells the agent to ask the user to paste a key, token or password into the conversation.** Observation only; skipped when the text refuses it.
 - **`BAS-SKILL-006` reports a skill that tells the agent to read issue or pull request text** (`gh issue view`, `gh pr diff` and similar), which anyone who can open an issue or pull request can write. Observation only; skipped when the text refuses it.

@@ -1990,3 +1990,82 @@ rules:
       Replace the wildcard with an explicit list of the tool names this
       agent actually needs. Review that list whenever a new tool is added to
       the pool it draws from.
+
+  # ---------------------------------------------------------------------
+  # LLM04 -- supply chain
+  # ---------------------------------------------------------------------
+
+  - id: BAS-LLM04-002
+    title: Code installs packages at runtime
+    # An observation: the repository cannot show whether the versions are
+    # pinned, whether lifecycle scripts are disabled or whether the install
+    # is confirmed first, so the call is something to review, not a defect.
+    kind: observation
+    severity: low
+    confidence: medium
+    categories: [LLM04]
+    language: javascript
+    # One ARG name and one FN name gate every pattern, because a
+    # `metavariable_matches` constraint fails closed on a variable a pattern
+    # did not capture (see `rules::engine::CompiledRule::metavariables_satisfied`).
+    #
+    # Two shapes:
+    #   - an argument array: `spawnSync("npm", ["install", ...], opts)`. The
+    #     first argument is spelled out literally (four package managers, two
+    #     quote styles) and ARG is the array, whose text must contain the
+    #     element "install", "add" or "i". Matching the element in the array
+    #     text rather than in the pattern avoids one pattern per position.
+    #   - a command string: `execSync("npm install ...")`, plain or as a
+    #     template literal. ARG is the first argument, whose text must start
+    #     with a package manager, whitespace and an install word.
+    # The generic string-command patterns come last on purpose: a node is
+    # reported by the first pattern that matches it, and `$FN($ARG, ...)`
+    # also matches `spawnSync("npm", [...])` with ARG bound to "npm", which
+    # fails the gate and would hide the array patterns if listed before them.
+    # Each shape is listed with and without trailing arguments, because
+    # `$$$R` after a comma does not match a call that has none.
+    # FN is the callee, limited to the child_process functions, bare or
+    # behind the `cp` / `child_process` / `childProcess` receivers. A bare
+    # `exec` is acceptable here, unlike in BAS-LLM10-006, because ARG must
+    # already be a literal install command, so `pattern.exec(...)` (a
+    # different receiver) and ordinary regex use never reach the gate.
+    #
+    # Known gaps, left out rather than matched approximately: a command or
+    # package manager held in a variable (`spawnSync(pm, ["install"])`), a
+    # command built by concatenation (`"npm " + "install"`), a `npm.cmd` or
+    # `npx` launcher, `yarn` or `bun` with no subcommand, and calls through
+    # a wrapper such as `execa`. Python has no equivalent rule yet.
+    any:
+      - '$FN("npm", $ARG, $$$R)'
+      - "$FN('npm', $ARG, $$$R)"
+      - '$FN("pnpm", $ARG, $$$R)'
+      - "$FN('pnpm', $ARG, $$$R)"
+      - '$FN("yarn", $ARG, $$$R)'
+      - "$FN('yarn', $ARG, $$$R)"
+      - '$FN("bun", $ARG, $$$R)'
+      - "$FN('bun', $ARG, $$$R)"
+      - '$FN("npm", $ARG)'
+      - "$FN('npm', $ARG)"
+      - '$FN("pnpm", $ARG)'
+      - "$FN('pnpm', $ARG)"
+      - '$FN("yarn", $ARG)'
+      - "$FN('yarn', $ARG)"
+      - '$FN("bun", $ARG)'
+      - "$FN('bun', $ARG)"
+      - "$FN($ARG, $$$R)"
+      - "$FN($ARG)"
+    metavariable_matches:
+      FN: '^(?:(?:cp|child_process|childProcess)\.)?(?:exec|execSync|execFile|execFileSync|spawn|spawnSync)$'
+      ARG: '(?s)^(?:\[(?:.*,)?\s*["''](?:install|add|i)["'']\s*(?:,.*)?\]|["''`](?:npm|pnpm|yarn|bun)\s+(?:install|i|add)(?:\s.*|["''`]))$'
+    description: >
+      This code starts a package-manager install (`npm install`, `pnpm add`,
+      `yarn add`, `bun add` and similar) as a child process while it runs.
+      The packages it fetches, and any install scripts they carry, are
+      third-party code that was not part of the reviewed source tree. The
+      repository cannot show whether the versions are pinned or whether the
+      install is confirmed first, so a reviewer should check.
+    remediation: >
+      Declare the dependency in the package manifest and lock file instead.
+      If the install has to happen at runtime, pin exact versions, disable
+      lifecycle scripts (for example `--ignore-scripts`), and ask for
+      confirmation before installing.
