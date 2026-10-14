@@ -9,6 +9,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Fixed
 
 - **`BAS-ZT1-003` no longer reports a provider-key-shaped literal that contains the word `secret` or `leak`**, such as the dummy values used in test fixtures. A random-looking key is still reported.
+- **`BAS-ZT1-011` no longer reports a cookie name that starts with `__Host-` or `__Secure-`** as a hardcoded credential. Any other literal under a credential-shaped name is judged as before.
 
 ## [0.4.0] - 2026-10-14
 

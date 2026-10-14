@@ -582,3 +582,20 @@ fn bas_zt1_003_still_flags_a_random_looking_provider_key() {
     let findings = scan_source(&ruleset, Path::new("src/client.ts"), source);
     assert!(ids(&findings).contains(&"BAS-ZT1-003"), "{findings:?}");
 }
+
+#[test]
+fn bas_zt1_011_ignores_a_reserved_prefix_cookie_name() {
+    let ruleset = ruleset();
+    let source = "const ACCESS_TOKEN_COOKIE = \"__Host-app-dashboard-token\";\n\
+                  const SESSION_SECRET_COOKIE = \"__Secure-app-session-secret\";\n";
+    let findings = scan_source(&ruleset, Path::new("src/routes.ts"), source);
+    assert!(!ids(&findings).contains(&"BAS-ZT1-011"), "{findings:?}");
+}
+
+#[test]
+fn bas_zt1_011_still_flags_a_passphrase_shaped_password() {
+    let ruleset = ruleset();
+    let source = "const password = \"Correct-Horse-Battery-9\";\n";
+    let findings = scan_source(&ruleset, Path::new("src/db.ts"), source);
+    assert!(ids(&findings).contains(&"BAS-ZT1-011"), "{findings:?}");
+}
