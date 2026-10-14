@@ -111,6 +111,15 @@ pub(crate) struct RuleDef {
     /// prompt in the user role rather than the system role.
     #[serde(default)]
     pub(crate) none_in_file: Vec<String>,
+    /// Keep a match only when one of these patterns matches anywhere in the
+    /// same file, with every metavariable it shares with `any` bound to the
+    /// same text.
+    ///
+    /// The positive twin of `none_in_file`: it anchors a rule to a file that
+    /// shows the context the rule is about (for example, that an HTTP
+    /// transport is built) before an otherwise ubiquitous call is reported.
+    #[serde(default)]
+    pub(crate) requires_in_file: Vec<String>,
     /// Captured metavariable name to the regex its text must match.
     #[serde(default)]
     pub(crate) metavariable_matches: HashMap<String, String>,

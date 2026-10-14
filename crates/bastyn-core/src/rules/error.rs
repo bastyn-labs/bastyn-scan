@@ -25,6 +25,23 @@ pub enum RuleError {
         id: String,
     },
 
+    /// A rule declared both `flow.sink` and `requires_in_file`.
+    ///
+    /// The wrapper-sink pass `flow.sink` turns on builds its findings
+    /// directly from `wrapper_sink_calls`, never through
+    /// `CompiledRule::satisfies_file_requirement`, so a `requires_in_file`
+    /// condition on such a rule would be silently skipped for every finding
+    /// the wrapper pass reports -- a load error rather than a check that
+    /// quietly does nothing for half of what the rule can report.
+    #[error(
+        "rule `{id}`: `flow.sink` and `requires_in_file` cannot be combined; the wrapper-sink \
+         pass `flow.sink` enables does not consult `requires_in_file`"
+    )]
+    FlowSinkWithRequiresInFile {
+        /// The offending rule's id.
+        id: String,
+    },
+
     /// A rule declared a `categories` list with no categories in it.
     #[error("rule `{id}`: `categories` must contain at least one category")]
     EmptyCategories {

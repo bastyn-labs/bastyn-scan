@@ -1196,3 +1196,130 @@ rules:
         "{err}"
     );
 }
+
+/// A rule that reports a bind-all address only in a file that also builds the
+/// HTTP transport; `requires_in_file` has no metavariables, like the anonymous
+/// `none_in_file` patterns.
+const REQUIRES_RULE_TS: &str = r#"
+rules:
+  - id: BAS-RIF-001
+    title: t
+    kind: observation
+    severity: low
+    confidence: high
+    categories: [ZT3]
+    language: javascript
+    any:
+      - '$APP.listen($PORT, "0.0.0.0")'
+    requires_in_file:
+      - 'new StreamableHTTPServerTransport($$$)'
+    description: d
+    remediation: r
+"#;
+
+#[test]
+fn requires_in_file_keeps_a_match_when_the_required_pattern_is_present() {
+    let rules = RuleSet::from_yaml(REQUIRES_RULE_TS).unwrap();
+    let source =
+        "const t = new StreamableHTTPServerTransport({});\napp.listen(3000, \"0.0.0.0\");\n";
+    assert_eq!(scan_source(&rules, Path::new("s.ts"), source).len(), 1);
+}
+
+#[test]
+fn requires_in_file_drops_a_match_when_the_required_pattern_is_absent() {
+    let rules = RuleSet::from_yaml(REQUIRES_RULE_TS).unwrap();
+    let source = "app.listen(3000, \"0.0.0.0\");\n";
+    assert_eq!(
+        scan_source(&rules, Path::new("s.ts"), source),
+        Vec::<crate::finding::Finding>::new()
+    );
+}
+
+#[test]
+fn requires_in_file_accepts_any_one_of_several_patterns() {
+    let yaml = REQUIRES_RULE_TS.replace(
+        "      - 'new StreamableHTTPServerTransport($$$)'",
+        "      - 'new StreamableHTTPServerTransport($$$)'\n      - 'new SSEServerTransport($$$)'",
+    );
+    let rules = RuleSet::from_yaml(&yaml).unwrap();
+    let source = "const t = new SSEServerTransport(\"/m\", res);\napp.listen(3000, \"0.0.0.0\");\n";
+    assert_eq!(scan_source(&rules, Path::new("s.ts"), source).len(), 1);
+}
+
+#[test]
+fn requires_in_file_combines_with_none_in_file() {
+    let yaml = REQUIRES_RULE_TS.replace(
+        "    description: d",
+        "    none_in_file:\n      - 'requireBearerAuth($$$)'\n    description: d",
+    );
+    let rules = RuleSet::from_yaml(&yaml).unwrap();
+    let guarded = "const t = new StreamableHTTPServerTransport({});\nrequireBearerAuth({});\napp.listen(3000, \"0.0.0.0\");\n";
+    assert_eq!(
+        scan_source(&rules, Path::new("s.ts"), guarded),
+        Vec::<crate::finding::Finding>::new()
+    );
+}
+
+#[test]
+fn requires_in_file_works_for_python() {
+    let yaml = r#"
+rules:
+  - id: BAS-RIF-002
+    title: t
+    kind: observation
+    severity: low
+    confidence: high
+    categories: [ZT3]
+    language: python
+    any:
+      - 'uvicorn.run($APP, host="0.0.0.0")'
+    requires_in_file:
+      - '$_.streamable_http_app()'
+    description: d
+    remediation: r
+"#;
+    let rules = RuleSet::from_yaml(yaml).unwrap();
+    let hit = "app = mcp.streamable_http_app()\nuvicorn.run(app, host=\"0.0.0.0\")\n";
+    assert_eq!(scan_source(&rules, Path::new("s.py"), hit).len(), 1);
+    let miss = "uvicorn.run(app, host=\"0.0.0.0\")\n";
+    assert_eq!(scan_source(&rules, Path::new("s.py"), miss).len(), 0);
+}
+
+#[test]
+fn requires_in_file_naming_an_unbound_metavariable_fails_to_load() {
+    let yaml = REQUIRES_RULE_TS.replace("new StreamableHTTPServerTransport($$$)", "new T($OTHER)");
+    let err = RuleSet::from_yaml(&yaml).unwrap_err();
+    assert!(
+        matches!(err, RuleError::UnboundMetavariable { ref var, ref field, .. } if var == "OTHER" && field == "requires_in_file"),
+        "{err}"
+    );
+}
+
+#[test]
+fn flow_sink_combined_with_requires_in_file_fails_to_load() {
+    let yaml = r"
+rules:
+  - id: BAS-RIF-003
+    title: t
+    kind: defect
+    severity: critical
+    confidence: high
+    categories: [LLM10]
+    language: python
+    any:
+      - eval($ARG)
+    flow:
+      variable: ARG
+      source: model_output
+      sink: code_execution
+    requires_in_file:
+      - 'import os'
+    description: d
+    remediation: r
+";
+    let err = RuleSet::from_yaml(yaml).unwrap_err();
+    assert!(
+        matches!(err, RuleError::FlowSinkWithRequiresInFile { ref id } if id == "BAS-RIF-003"),
+        "{err}"
+    );
+}

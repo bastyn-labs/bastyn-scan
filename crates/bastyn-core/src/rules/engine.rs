@@ -186,6 +186,9 @@ struct CompiledRule {
     /// [`CompiledRule::excluded_by_file`] against a whole-file search rather
     /// than the candidate node alone, unlike [`Self::none`].
     none_in_file: Vec<(Pattern, Vec<String>)>,
+    /// `requires_in_file:` patterns, paired like [`Self::none_in_file`].
+    /// Checked by [`CompiledRule::satisfies_file_requirement`].
+    requires_in_file: Vec<(Pattern, Vec<String>)>,
     metavariable_matches: Vec<(String, RegexMatcher)>,
     metavariable_not_matches: Vec<(String, RegexMatcher)>,
     flow: Option<CompiledFlow>,
@@ -349,7 +352,22 @@ impl CompiledRule {
             .collect();
 
         let flow = compile_flow(&def, &any_vars)?;
-        let none_in_file = compile_none_in_file(&def, grammar, lang, &any_vars)?;
+        let none_in_file = compile_file_patterns(
+            &def,
+            "none_in_file",
+            &def.none_in_file,
+            grammar,
+            lang,
+            &any_vars,
+        )?;
+        let requires_in_file = compile_file_patterns(
+            &def,
+            "requires_in_file",
+            &def.requires_in_file,
+            grammar,
+            lang,
+            &any_vars,
+        )?;
         let exclude_if = compile_exclude_if(&def.id, def.language, def.exclude_if)?;
 
         let mut metavariable_matches = Vec::with_capacity(def.metavariable_matches.len());
@@ -398,6 +416,7 @@ impl CompiledRule {
             none,
             inside,
             none_in_file,
+            requires_in_file,
             metavariable_matches,
             metavariable_not_matches,
             flow,
@@ -458,24 +477,24 @@ impl CompiledRule {
     /// whole-file search runs on the few matches that would otherwise be
     /// reported.
     fn excluded_by_file<D: Doc>(&self, root: &Node<'_, D>, env: &MetaVarEnv<'_, D>) -> bool {
-        self.none_in_file.iter().any(|(pattern, vars)| {
-            // A candidate from an `any` pattern that did not bind all of
-            // these has nothing to compare, so this pattern does not apply.
-            let Some(wanted) = vars
+        self.none_in_file
+            .iter()
+            .any(|(pattern, vars)| file_has_match(root, env, pattern, vars).unwrap_or(false))
+    }
+
+    /// Whether the rule's `requires_in_file` is satisfied: vacuously true when
+    /// the rule declares none, otherwise at least one required pattern must
+    /// match elsewhere in the file with the same bindings this candidate has.
+    fn satisfies_file_requirement<D: Doc>(
+        &self,
+        root: &Node<'_, D>,
+        env: &MetaVarEnv<'_, D>,
+    ) -> bool {
+        self.requires_in_file.is_empty()
+            || self
+                .requires_in_file
                 .iter()
-                .map(|var| env.get_match(var).map(|node| node.text().into_owned()))
-                .collect::<Option<Vec<String>>>()
-            else {
-                return false;
-            };
-            root.find_all(pattern).any(|hit| {
-                vars.iter().zip(&wanted).all(|(var, text)| {
-                    hit.get_env()
-                        .get_match(var)
-                        .is_some_and(|node| node.text() == text.as_str())
-                })
-            })
-        })
+                .any(|(pattern, vars)| file_has_match(root, env, pattern, vars).unwrap_or(false))
     }
 }
 
@@ -540,6 +559,11 @@ fn compile_flow(def: &RuleDef, any_vars: &HashSet<String>) -> Result<Option<Comp
     if flow.sink.is_some() && !def.none_in_file.is_empty() {
         return Err(RuleError::FlowSinkWithNoneInFile { id: def.id.clone() });
     }
+    // Same reasoning for `requires_in_file`: the wrapper-sink pass never
+    // consults `CompiledRule::satisfies_file_requirement`.
+    if flow.sink.is_some() && !def.requires_in_file.is_empty() {
+        return Err(RuleError::FlowSinkWithRequiresInFile { id: def.id.clone() });
+    }
     // The wrapper-sink pass `flow.sink` turns on builds its own findings
     // straight from `wrapper_sink_calls`, bypassing the per-node match loop
     // `passthrough_downgrade` is computed in -- rejected here rather than
@@ -601,19 +625,47 @@ fn compile_flow(def: &RuleDef, any_vars: &HashSet<String>) -> Result<Option<Comp
     }))
 }
 
-/// Compile `def.none_in_file`, pairing each pattern with the metavariables
+/// Whether `pattern` matches anywhere under `root` with every metavariable in
+/// `vars` bound to the same text as in the candidate's `env`.
+///
+/// Returns `None` when the candidate did not bind all of `vars` (it came from
+/// an `any` pattern that does not define them), so there is nothing to compare
+/// and the file pattern does not apply.
+fn file_has_match<D: Doc>(
+    root: &Node<'_, D>,
+    env: &MetaVarEnv<'_, D>,
+    pattern: &Pattern,
+    vars: &[String],
+) -> Option<bool> {
+    let wanted = vars
+        .iter()
+        .map(|var| env.get_match(var).map(|node| node.text().into_owned()))
+        .collect::<Option<Vec<String>>>()?;
+    Some(root.find_all(pattern).any(|hit| {
+        vars.iter().zip(&wanted).all(|(var, text)| {
+            hit.get_env()
+                .get_match(var)
+                .is_some_and(|node| node.text() == text.as_str())
+        })
+    }))
+}
+
+/// Compile one of a rule's whole-file pattern lists (`none_in_file` or
+/// `requires_in_file`, named by `field`), pairing each pattern with the metavariables
 /// (sorted, for deterministic error ordering) it shares with `any`.
 ///
 /// Split out of [`CompiledRule::compile`] for the same reason
 /// [`compile_flow`] is: keeping that function within clippy's line-count
 /// lint.
-fn compile_none_in_file<L: LanguageExt + Copy>(
+fn compile_file_patterns<L: LanguageExt + Copy>(
     def: &RuleDef,
+    field: &str,
+    sources: &[String],
     grammar: &'static str,
     lang: L,
     any_vars: &HashSet<String>,
 ) -> Result<Vec<(Pattern, Vec<String>)>> {
-    let patterns = compile_patterns(&def.id, grammar, &def.none_in_file, lang)?;
+    let patterns = compile_patterns(&def.id, grammar, sources, lang)?;
     patterns
         .into_iter()
         .map(|pattern| {
@@ -626,7 +678,7 @@ fn compile_none_in_file<L: LanguageExt + Copy>(
             if let Some(var) = vars.iter().find(|var| !any_vars.contains(*var)) {
                 return Err(RuleError::UnboundMetavariable {
                     id: def.id.clone(),
-                    field: "none_in_file".to_string(),
+                    field: field.to_string(),
                     var: var.clone(),
                 });
             }
@@ -1010,7 +1062,9 @@ fn scan_with<L: LanguageExt + Copy>(
             let passthrough_observation = rule.flow.as_ref().is_some_and(|flow| {
                 passthrough_observation_for(flow, candidate.get_env(), matched, &node, &mut graph)
             });
-            if rule.excluded_by_file(&node, candidate.get_env()) {
+            if rule.excluded_by_file(&node, candidate.get_env())
+                || !rule.satisfies_file_requirement(&node, candidate.get_env())
+            {
                 continue;
             }
             if let Some(exclude) = &rule.exclude_if
