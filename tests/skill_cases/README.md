@@ -12,7 +12,7 @@ The figures it prints are measured on these synthetic cases only. They are not d
 
 ## Pairs (twins)
 
-Every malicious case M01..M14 has one benign twin B11..B23 and B25 (B11 twins M01, and so on), linked by `pair` in `cases.toml` on both sides. A twin is a copy of the malicious skill (same frontmatter shape, files, pattern position and length) with the minimal edit that makes it benign, so the only difference is intent. Twins carry a different `name:` but the same topic.
+Every malicious case (M01..M14 and M17) has one benign twin (B11..B23, B25 and B26; B11 twins M01, and so on), linked by `pair` in `cases.toml` on both sides. A twin is a copy of the malicious skill (same frontmatter shape, files, pattern position and length) with the minimal edit that makes it benign, so the only difference is intent. Twins carry a different `name:` but the same topic.
 
 | pair | the minimal edit in the twin |
 |---|---|
@@ -30,10 +30,11 @@ Every malicious case M01..M14 has one benign twin B11..B23 and B25 (B11 twins M0
 | M12 / B22 | every deletion needs the operator's approval |
 | M13 / B23 | the bypass wording becomes a quoted example to avoid, with a sentence saying never to follow it |
 | M14 / B25 | the override phrase after a non-refusal negation becomes a sentence telling the agent never to follow it |
+| M17 / B26 | the loose diagram security level becomes the strict level, with a sentence saying never to use the loose one |
 
 B06 (family emoji with zero-width joiners and accents) and B24 (a leading byte-order mark only) are unpaired benign cases for those two behaviours.
 
-The harness checks that each pair has opposite labels, that both cases exist and that the link is symmetric, and prints a pair table on every run: both outcomes and whether the scanner separates the pair (malicious `detected` and twin `clean`), ending with `pairs separated: X of 14`.
+The harness checks that each pair has opposite labels, that both cases exist and that the link is symmetric, and prints a pair table on every run: both outcomes and whether the scanner separates the pair (malicious `detected` and twin `clean`), ending with `pairs separated: X of N`, where N is the number of malicious cases.
 
 ## Labeling rules
 

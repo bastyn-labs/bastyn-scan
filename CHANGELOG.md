@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`BAS-SKILL-004` reports a skill that tells the agent to start a diagram library with its `loose` security level**, which lets diagram text run scripts. It is an observation (shown with `--show-observations`) and is skipped when the text is refusing it.
+
 ### Fixed
 
 - **`BAS-ZT1-003` no longer reports a provider-key-shaped literal that contains the word `secret` or `leak`**, such as the dummy values used in test fixtures. A random-looking key is still reported.

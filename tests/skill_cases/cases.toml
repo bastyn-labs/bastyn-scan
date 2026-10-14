@@ -379,3 +379,23 @@ outcome_now = "clean"
 rules = []
 why = "Twin of M14: the same override phrase appears only inside a sentence telling the agent never to follow it."
 pair = "M14"
+
+[[case]]
+id = "M17"
+dir = "malicious/M17-diagram-loose-security-level"
+label = "malicious"
+class = "unsafe-output-setting"
+outcome_now = "detected"
+rules = ["BAS-SKILL-004"]
+why = "Tells the agent to start the diagram library with the loose security level."
+pair = "B26"
+
+[[case]]
+id = "B26"
+dir = "benign/B26-diagram-loose-warning"
+label = "benign"
+class = "unsafe-output-setting"
+outcome_now = "clean"
+rules = []
+why = "Uses the strict level and tells the agent never to use the loose one."
+pair = "M17"
