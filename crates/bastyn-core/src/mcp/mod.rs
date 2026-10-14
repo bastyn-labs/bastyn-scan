@@ -21,11 +21,17 @@
 //! | `BAS-MCP-007` | A container launcher run with `--privileged` or the Docker socket mounted | `ZT3` |
 //! | `BAS-MCP-008` | A container launcher on the host network (observation) | `ZT3` |
 //! | `BAS-MCP-009` | A literal credential in a server `url` query string | `ZT1` |
+//! | `BAS-MCP-010` | Hidden Unicode in a tool's text, in a tools snapshot file | `LLM01` |
+//! | `BAS-MCP-011` | A hidden-instruction marker in a tool description, in a tools snapshot file | `LLM01` |
+//! | `BAS-MCP-012` | An instruction-override phrase in a tool description, in a tools snapshot file (observation) | `LLM01` |
 //! | `BAS-LLM03-020` | A client-wide or per-server `autoApprove`/`alwaysAllow` wildcard | `LLM03` |
 
 pub(crate) mod checks;
 mod launch;
 pub(crate) mod model;
+mod snapshot_checks;
+
+pub use snapshot_checks::{inspect_snapshot, is_tools_snapshot};
 
 use std::path::Path;
 

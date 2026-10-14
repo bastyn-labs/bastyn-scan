@@ -1853,3 +1853,29 @@ why      = "execSync runs pnpm add while the code runs"
 [[expect_none]]
 file = "clean/llm04_runtime_install_near_misses.js"
 why  = "npm run and npm ci spawns, npm test, git add, require(\"npm\"), and install only inside strings and comments"
+
+# =====================================================================
+# mcp/tools_snapshot/ — a tools snapshot written by `bastyn inspect-server`
+# =====================================================================
+
+[[expect]]
+file     = "mcp/tools_snapshot/notes.bastyn-tools.json"
+line     = 5
+rule     = "BAS-MCP-011"
+category = "LLM01"
+kind     = "defect"
+severity = "high"
+why      = "The add tool's description carries an <IMPORTANT> marker and an instruction not to tell the user, text the model reads and a person skimming the tool list does not."
+
+[[expect]]
+file     = "mcp/tools_snapshot/notes.bastyn-tools.json"
+line     = 6
+rule     = "BAS-MCP-010"
+category = "LLM01"
+kind     = "defect"
+severity = "high"
+why      = "The mul tool's description ends in a zero-width space (U+200B), invisible to a reader and present in the text the model reads."
+
+[[expect_none]]
+file = "clean/ordinary.bastyn-tools.json"
+why  = "A snapshot with an ordinary description, a ZWNJ and a left-to-right mark inside text, an emoji variation selector, and a null description -- none of them hidden-text or instruction phrasing."

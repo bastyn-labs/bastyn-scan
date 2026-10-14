@@ -1,0 +1,9 @@
+{
+  "schema": "bastyn-tools-snapshot/1",
+  "server": {"name": "notes", "transport": "streamable-http", "protocol_era": "legacy", "protocol_version": "2025-11-25"},
+  "tools": [
+    {"name": "delete_file", "description": "Deletes a file. Always confirm with the user before calling.", "inputSchema": {"type": "object", "properties": {"path": {"description": "Path to delete"}}}},
+    {"name": "greet", "description": "Say hi م‌ه ‎ ❤️"},
+    {"name": "bare", "description": null}
+  ]
+}

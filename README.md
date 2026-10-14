@@ -237,6 +237,23 @@ bastyn inspect-server --config <FILE> --server <NAME> [--allow-spawn] [--out <FI
 
 A summary line (`captured N tools from <name> (<era>)`) goes to standard error. Exit `0` means a snapshot was written. Exit `2` means it could not be: a refused address or command, a connection failure, a server that needs credentials, an unusable config or a reply outside the protocol. Exit `1` is not used. Name the file `<name>.bastyn-tools.json`, which is the name `scan` looks for. The snapshot is deterministic: tools are sorted and keys are ordered, so two captures of an unchanged server are byte-identical. Text that came from the server is shown with control characters escaped.
 
+#### Checking a snapshot
+
+The whole workflow is two commands, and the second makes no connection:
+
+```sh
+bastyn inspect-server --url https://example.com/mcp --out notes.bastyn-tools.json
+bastyn scan .
+```
+
+`bastyn scan` reads any `bastyn-tools.json` or `*.bastyn-tools.json` file in the tree and checks the text an agent reads for each tool: its `name`, `title` and `description`, and every `description` inside its `inputSchema`. A file that is not valid JSON or names a different `schema` is ignored, not reported. One finding per rule per tool. The reported line is the first one that mentions the tool's name, so it is approximate.
+
+| Rule | What it flags |
+| --- | --- |
+| `BAS-MCP-010` | Invisible text in a tool's text: zero-width space, word joiner and the invisible math operators, bidi overrides and isolates, byte-order mark, and the Unicode tag block. Joiners (`U+200C`, `U+200D`), direction marks and the emoji variation selector are not flagged, because emoji and right-to-left text use them. A defect |
+| `BAS-MCP-011` | A hidden-instruction marker in a tool's text: `<important>`, `<hidden>`, `do not mention`, `do not tell the user`, `present it as if`. A defect |
+| `BAS-MCP-012` | An instruction-override phrase such as `ignore previous instructions` or `bypass the safety`. An observation, hidden by default |
+
 ### What it checks
 
 **55 rule ids** over the Python, TypeScript and JavaScript ASTs, via [`ast-grep`](https://ast-grep.github.io), loaded from `crates/bastyn-core/rules/*.yml`. A rule written for JavaScript is compiled against the JavaScript, TypeScript and TSX grammars alike, which is what "JS/TS" means below. Each rule's severity, description and remediation text live in those files, which are the reference this table summarises.
