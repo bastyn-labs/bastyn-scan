@@ -425,6 +425,54 @@ fn embedded_ruleset_loads_and_is_non_empty() {
     assert!(!ruleset.is_empty());
 }
 
+#[test]
+fn embedded_ruleset_includes_the_mcp_transport_rules() {
+    let ruleset = RuleSet::embedded().unwrap();
+
+    let py = "from mcp.server.fastmcp import FastMCP\n\nmcp = FastMCP(\"n\", host=\"0.0.0.0\")\nmcp.run(transport=\"streamable-http\")\n";
+    let findings = scan_source(&ruleset, Path::new("server.py"), py);
+    assert!(
+        findings.iter().any(|f| f.rule_id == "BAS-ZT3-001"),
+        "findings: {findings:?}"
+    );
+
+    for call in [
+        "FastMCP(\"n\", host=\"0.0.0.0\", port=1)",
+        "FastMCP(host=\"0.0.0.0\", port=1)",
+        "FastMCP(\"n\", port=1, host='0.0.0.0')",
+        "FastMCP(host=\"0.0.0.0\")",
+        "uvicorn.run(app, host=\"0.0.0.0\", port=1)",
+    ] {
+        let src = format!("{call}\nrun(transport=\"sse\")\n");
+        let findings = scan_source(&ruleset, Path::new("server.py"), &src);
+        assert!(
+            findings.iter().any(|f| f.rule_id == "BAS-ZT3-001"),
+            "{call}: {findings:?}"
+        );
+    }
+    let loopback = "FastMCP(\"n\", host=\"127.0.0.1\")\nrun(transport=\"sse\")\n";
+    let findings = scan_source(&ruleset, Path::new("server.py"), loopback);
+    assert!(
+        findings.iter().all(|f| f.rule_id != "BAS-ZT3-001"),
+        "findings: {findings:?}"
+    );
+
+    let ts = "const t = new StreamableHTTPServerTransport({});\napp.listen(3000, \"0.0.0.0\");\n";
+    let findings = scan_source(&ruleset, Path::new("server.ts"), ts);
+    assert!(
+        findings.iter().any(|f| f.rule_id == "BAS-ZT3-002"),
+        "findings: {findings:?}"
+    );
+
+    // Without an HTTP transport marker in the file neither rule fires.
+    let plain = "app.listen(3000, \"0.0.0.0\");\n";
+    let findings = scan_source(&ruleset, Path::new("plain.ts"), plain);
+    assert!(
+        findings.iter().all(|f| f.rule_id != "BAS-ZT3-002"),
+        "findings: {findings:?}"
+    );
+}
+
 // ---------------------------------------------------------------------
 // JS/TS twins closing the LLM08/LLM06/ZT2 recall gap: these run against the
 // real, embedded `bastyn.yml` rather than an ad-hoc rule string, so a typo in

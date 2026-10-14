@@ -50,9 +50,9 @@ about whether a rule actually exists yet. Of the 14 categories in
 | **Implemented** | A rule, CVE check, or infra/MCP analyser exists and is measured in the corpus gate | LLM01, LLM02, LLM03, LLM04, LLM06, LLM08, LLM10, ZT1, ZT2, ZT3, ZT4, ZT5 |
 | **Detectable, not yet implemented** | In the enum, correctly typed, no detector written | LLM09, ZT6 |
 
-LLM04 and ZT3 are implemented outside `rules/bastyn.yml`: LLM04 by
-`BAS-CVE-001`'s OSV lookup, ZT3 by the container/MCP-config analysers, not by
-an `ast-grep` rule. LLM02 is carried by `rules/secrets.yml` and ZT5 by
+LLM04 and ZT3 are implemented mostly outside `rules/bastyn.yml`: LLM04 by
+`BAS-CVE-001`'s OSV lookup, ZT3 by the container/MCP-config analysers and by
+two observation rules in `rules/mcp_transport.yml`. LLM02 is carried by `rules/secrets.yml` and ZT5 by
 `rules/memory.yml`, which is why neither appears in `bastyn.yml` either.
 
 LLM09 and ZT6 remain without one. Both are recorded as `[[known_gap]]`

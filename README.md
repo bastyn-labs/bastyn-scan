@@ -23,7 +23,7 @@
 
 ---
 
-> **Status: alpha.** `bastyn scan` finds real issues today: 53 AST rules over Python, TypeScript and JavaScript across the OWASP GenAI and Anthropic Zero Trust categories, plus MCP manifest inspection, Dockerfile and Docker Compose inspection, a hidden-Unicode scan of agent instruction files, `SKILL.md` manifest scanning, and CVE matching against OSV. The embedded prompt-injection classifier is not built yet. See [Measured coverage](#measured-coverage) for what the test corpus does and does not prove, and [Roadmap](#roadmap) for what is missing.
+> **Status: alpha.** `bastyn scan` finds real issues today: 55 AST rules over Python, TypeScript and JavaScript across the OWASP GenAI and Anthropic Zero Trust categories, plus MCP manifest inspection, Dockerfile and Docker Compose inspection, a hidden-Unicode scan of agent instruction files, `SKILL.md` manifest scanning, and CVE matching against OSV. The embedded prompt-injection classifier is not built yet. See [Measured coverage](#measured-coverage) for what the test corpus does and does not prove, and [Roadmap](#roadmap) for what is missing.
 
 ## Why BASTYN
 
@@ -84,7 +84,7 @@ Bastyn scan: .
 Mode: online
 
 [ok] Discovered source tree
-[ok] Analysed 3 files with 53 rules
+[ok] Analysed 3 files with 55 rules
 [ok] Parsed 3 dependencies
 [ok] OSV vulnerability lookup - 3 dependencies checked
 
@@ -219,7 +219,7 @@ A CVE lookup that could not run, or that ran only partly, does not change the ex
 
 ### What it checks
 
-**53 rule ids** over the Python, TypeScript and JavaScript ASTs, via [`ast-grep`](https://ast-grep.github.io), loaded from `crates/bastyn-core/rules/*.yml`. A rule written for JavaScript is compiled against the JavaScript, TypeScript and TSX grammars alike, which is what "JS/TS" means below. Each rule's severity, description and remediation text live in those files, which are the reference this table summarises.
+**55 rule ids** over the Python, TypeScript and JavaScript ASTs, via [`ast-grep`](https://ast-grep.github.io), loaded from `crates/bastyn-core/rules/*.yml`. A rule written for JavaScript is compiled against the JavaScript, TypeScript and TSX grammars alike, which is what "JS/TS" means below. Each rule's severity, description and remediation text live in those files, which are the reference this table summarises.
 
 | Rule ids | What they match | Languages |
 | --- | --- | --- |
@@ -232,6 +232,7 @@ A CVE lookup that could not run, or that ran only partly, does not change the ex
 | `BAS-ZT2-001`, `-002`, `BAS-LLM03-001`, `-002`, `-030` | Wildcard tool grants, and destructive agent tools invoked with no confirmation guard. `BAS-LLM03-001`/`-002` are observations: a tool's name is not proof that it is destructive | Python, JS/TS |
 | `BAS-ZT5-001`, `-003`, `-004`, `BAS-ZT2-010` | Module-level chat history mutated per request, singleton memory, a literal `thread_id`, a shell middleware with no execution policy. Observations, because whether globally-keyed memory is wrong depends on whether the deployment is multi-tenant, and a source tree does not say | Python |
 | `BAS-LLM06-001`, `-002` | An LLM call with no token ceiling. Observations | Python, JS/TS |
+| `BAS-ZT3-001`, `-002` | An HTTP MCP server that binds all network interfaces (`0.0.0.0` or `::`) in a file that shows no SDK authentication. Observations | Python, JS/TS |
 
 Not every rule fires equally well in every language yet, and several of the known gaps are JS/TS-specific.
 
@@ -251,7 +252,7 @@ TypeScript and JavaScript have no dataflow graph yet, so their equivalents (`BAS
 Six more checks are built into the engine rather than written as rules:
 
 - **`.env` files** (`BAS-ZT1-021`, `-022`). Any `.env` or `.env.<suffix>` file the walker reaches — walked and analysed regardless of `--hidden`, since a scanner that skips `.env` by default misses exactly the material most worth checking. Every `KEY=value` line is judged by the same credential-shape logic already backing `BAS-INFRA-002`/`-006`: `-021` for a provider API key literal (the `sk-...` shape), `-022` for any other credential-shaped literal. `.env.example`, `.env.sample`, `.env.template` and `.env.dist` are still walked and counted as scanned, but never flagged — they document the variables a real `.env` must set, not a leaked secret.
-- **MCP manifests** (`BAS-MCP-000` to `-005`, `BAS-LLM03-020`). `mcp.json`, `.mcp.json`, `claude_desktop_config.json` and the YAML and TOML equivalents, all parsed into one model so a check cannot differ by file type. A manifest that does not parse, root or broad filesystem grants, unauthenticated plaintext HTTP, wildcard tool grants, credentials in a server's environment, an `autoApprove`/`alwaysAllow` wildcard, and a server launched from a registry with no version pin. `npx -y @scope/server-x` resolves to whatever the registry serves when the agent starts, so code inside the trust boundary can change with no change to your repository; a pinned server (`npx -y @scope/server@1.2.3`, `uvx server@1.2.3`) is resolved and queried against OSV like any other dependency, though it appears in no `package.json`. Bastyn does not inspect a server's own source.
+- **MCP manifests** (`BAS-MCP-000` to `-009`, `BAS-LLM03-020`). `mcp.json`, `.mcp.json`, `claude_desktop_config.json` and the YAML and TOML equivalents, all parsed into one model so a check cannot differ by file type. A manifest that does not parse, root or broad filesystem grants, unauthenticated plaintext HTTP, wildcard tool grants, credentials in a server's environment, an `autoApprove`/`alwaysAllow` wildcard, a server launched from a registry with no version pin, a shell wrapper that downloads and runs code, a container launched with `--privileged` or the Docker socket mounted, host networking (an observation), and a literal credential in a server URL's query string. `npx -y @scope/server-x` resolves to whatever the registry serves when the agent starts, so code inside the trust boundary can change with no change to your repository; a pinned server (`npx -y @scope/server@1.2.3`, `uvx server@1.2.3`) is resolved and queried against OSV like any other dependency, though it appears in no `package.json`. An MCP server's own source is checked for one case: `BAS-ZT3-001` (Python) and `BAS-ZT3-002` (TypeScript and JavaScript) report an HTTP MCP server that binds all network interfaces while the same file shows no authentication. These are observations, hidden by default, because authentication is often provided outside the file.
 - **Agent instruction files** (`BAS-LLM01-001`). A byte-level scan of `SKILL.md`, `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `*.prompt` and every MCP file above, for codepoints that render as nothing: the zero-width characters, the five bidi override and embedding controls, and the Unicode tag block. A human reviewing the diff sees only the visible text while the model reads the hidden payload too. Ordinary non-ASCII text is never flagged, and a `U+FEFF` at the very first byte is read as a byte-order mark.
 - **`SKILL.md` manifests** (`BAS-SKILL-001` to `-003`). Any file named `SKILL.md`, anywhere in the tree, checked three ways: frontmatter missing `name` or `description`, the two fields the [Agent Skills specification](https://agentskills.io/specification) actually requires, filed as an observation rather than a defect since a spec-validity gap is not itself a security claim; classic instruction-override phrasing ("ignore all previous instructions" and similar) embedded in the file's own text, which a skill-discovery mechanism reads directly; and language telling the agent not to pause for confirmation before a chain of consequential actions, filed as an observation since the repository cannot show whether skipping confirmation is wrong for that skill. A `SKILL.md` is both a manifest a host trusts and a text file a model reads, so it fails in ways `AGENTS.md`'s hidden-Unicode scan does not cover.
 - **Container configuration** (`BAS-INFRA-001` to `-006`, `-010`). Dockerfiles and Compose files: `USER root` as the effective final user, a provider key or password in `ENV`/`ARG` or a Compose `environment:`, a `/var/run/docker.sock` mount, `privileged: true`, `network_mode: host`, `pid: host`. ZT3, meaning no sandbox boundary, is close to undetectable in application source because the boundary is not expressed there. It is expressed mechanically here. `BAS-INFRA-001` files an explicit root user as a defect and a missing `USER` instruction as an observation: 35 of the 57 Dockerfiles in the calibration corpus carry no `USER` at all, so filing each as a defect would drown the one case that is unambiguous.

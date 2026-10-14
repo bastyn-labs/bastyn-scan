@@ -1,0 +1,104 @@
+# HTTP MCP servers that listen on every network interface.
+#
+# Part of the built-in rule corpus, loaded alongside bastyn.yml and the other
+# rules/*.yml files by RuleSet::embedded(). Ids are globally unique across
+# every file.
+#
+# Schema: see the header of bastyn.yml.
+#
+# ZT3 is a context-dependent category, so both rules are `kind: observation`:
+# authentication is often supplied outside the file (a reverse proxy, a
+# gateway, network isolation), which the repository cannot show.
+#
+# Each rule has three parts. `any` finds the bind-all call. `requires_in_file`
+# demands a marker that the file serves MCP over HTTP, so an ordinary web
+# service or a stdio server never matches. `none_in_file` drops the match when
+# the file shows the SDK's authentication.
+#
+# Pattern forms shipped: the primary forms from the design (`$$$` captures
+# around a `host=` keyword argument, and `$APP.listen($PORT, "0.0.0.0")`)
+# parse and match. In BAS-ZT3-001 the `$$$, host=..., $$$` form needs a comma
+# on both sides, so a `host=` that is the first, last or only argument is
+# covered by the extra variants listed beside it. No `metavariable_matches`
+# fallback and no bare `host="0.0.0.0"` pattern was needed.
+
+rules:
+  - id: BAS-ZT3-001
+    title: HTTP MCP server binds all network interfaces and shows no authentication
+    kind: observation
+    severity: medium
+    confidence: medium
+    categories: [ZT3]
+    language: python
+    any:
+      - 'FastMCP($$$, host="0.0.0.0", $$$)'
+      - 'FastMCP(host="0.0.0.0", $$$)'
+      - 'FastMCP($$$, host="0.0.0.0")'
+      - 'FastMCP(host="0.0.0.0")'
+      - "FastMCP($$$, host='0.0.0.0', $$$)"
+      - "FastMCP(host='0.0.0.0', $$$)"
+      - "FastMCP($$$, host='0.0.0.0')"
+      - "FastMCP(host='0.0.0.0')"
+      - 'uvicorn.run($$$, host="0.0.0.0", $$$)'
+      - 'uvicorn.run(host="0.0.0.0", $$$)'
+      - 'uvicorn.run($$$, host="0.0.0.0")'
+      - 'uvicorn.run(host="0.0.0.0")'
+      - "uvicorn.run($$$, host='0.0.0.0', $$$)"
+      - "uvicorn.run(host='0.0.0.0', $$$)"
+      - "uvicorn.run($$$, host='0.0.0.0')"
+      - "uvicorn.run(host='0.0.0.0')"
+    requires_in_file:
+      - '"streamable-http"'
+      - "'streamable-http'"
+      - '"sse"'
+      - "'sse'"
+      - '$_.streamable_http_app()'
+      - '$_.sse_app()'
+    none_in_file:
+      - 'AuthSettings($$$)'
+      - 'token_verifier=$_'
+    description: >
+      This file starts an MCP server over HTTP and binds it to every
+      network interface (0.0.0.0), and the same file shows no
+      authentication setting. A server reachable from the network without
+      a login lets anyone who can reach the port call its tools. This is
+      an observation because authentication is often provided outside the
+      file, by a reverse proxy, a gateway or network isolation, which the
+      repository cannot show.
+    remediation: >
+      Bind to 127.0.0.1 unless remote access is intended, and when it is,
+      configure the SDK's authentication (a token verifier) or put the
+      server behind an authenticating proxy.
+
+  - id: BAS-ZT3-002
+    title: HTTP MCP server binds all network interfaces and shows no authentication
+    kind: observation
+    severity: medium
+    confidence: medium
+    categories: [ZT3]
+    language: javascript
+    any:
+      - '$APP.listen($PORT, "0.0.0.0")'
+      - "$APP.listen($PORT, '0.0.0.0')"
+      - '$APP.listen($PORT, "0.0.0.0", $$$)'
+      - "$APP.listen($PORT, '0.0.0.0', $$$)"
+      - '$APP.listen($PORT, "::")'
+      - "$APP.listen($PORT, '::')"
+    requires_in_file:
+      - 'new StreamableHTTPServerTransport($$$)'
+      - 'new SSEServerTransport($$$)'
+    none_in_file:
+      - 'requireBearerAuth($$$)'
+      - 'mcpAuthRouter($$$)'
+    description: >
+      This file builds an MCP HTTP transport and listens on every network
+      interface (0.0.0.0 or ::), and the same file shows no SDK
+      authentication middleware. A server reachable from the network
+      without a login lets anyone who can reach the port call its tools.
+      This is an observation because authentication is often provided
+      outside the file, by a reverse proxy, a gateway or network
+      isolation, which the repository cannot show.
+    remediation: >
+      Listen on 127.0.0.1 unless remote access is intended, and when it is,
+      add the SDK's bearer-auth middleware or put the server behind an
+      authenticating proxy.

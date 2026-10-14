@@ -33,6 +33,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **Rules: `BAS-ZT3-001` and `BAS-ZT3-002`** report an HTTP MCP server (Python, TypeScript/JavaScript) that binds all interfaces with no authentication visible in the same file, as an observation.
 - **A terminal recording in the README.** `docs/demo/demo.gif` shows `bastyn scan` on a folder with code, skill, MCP and dependency findings.
 - **`BAS-SKILL-002`, `BAS-SKILL-003` and the hidden-Unicode check now read a skill's `references/` files.** Text files (`.md`, `.markdown`, `.txt`) under `<skill>/references/` are checked like the `SKILL.md` they belong to, and are listed in the new `coverage.skill_reference_files`. A root-level `SKILL.md` claims only its own `references/` folder. A reference file never gets `BAS-SKILL-001`.
 - **`coverage.skill_unanalysed` in the JSON report.** It lists the files inside a skill folder that no analyser reads (for example images and shell scripts), sorted, so a clean result shows what it did not cover. Files that were skipped as unreadable or unparseable stay in `coverage.skipped` only.

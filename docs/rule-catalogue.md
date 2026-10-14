@@ -2,7 +2,7 @@
 
 **Nothing in this file is a shipped rule.** It is a design catalogue of
 candidate rules, and every count in it (100 rules, the per-category table, the
-30-rule shortlist) describes what is proposed, not what exists. Bastyn ships 53
+30-rule shortlist) describes what is proposed, not what exists. Bastyn ships 55
 rules; they live in `crates/bastyn-core/rules/*.yml`, and
 [`docs/frameworks/README.md`](frameworks/README.md) records which framework
 categories currently have a detector behind them.

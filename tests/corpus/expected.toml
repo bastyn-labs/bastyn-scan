@@ -1785,3 +1785,41 @@ category = "ZT3"
 kind     = "observation"
 severity = "medium"
 why      = "docker run --network host. Host networking is a legitimate sidecar pattern, so an observation."
+
+# =====================================================================
+# HTTP MCP servers that bind all interfaces (BAS-ZT3-001, BAS-ZT3-002).
+# =====================================================================
+
+[[expect]]
+file     = "observations/mcp_http_bind_all.py"
+line     = 3
+rule     = "BAS-ZT3-001"
+category = "ZT3"
+kind     = "observation"
+severity = "medium"
+why      = "FastMCP bound to 0.0.0.0 in a file that serves streamable-http and shows no AuthSettings or token verifier."
+
+[[expect]]
+file     = "observations/mcp_http_bind_all.ts"
+line     = 15
+rule     = "BAS-ZT3-002"
+category = "ZT3"
+kind     = "observation"
+severity = "medium"
+why      = "app.listen on 0.0.0.0 in a file that builds StreamableHTTPServerTransport and shows no bearer-auth middleware."
+
+[[expect_none]]
+file = "clean/mcp_http_local.py"
+why  = "The same server bound to 127.0.0.1 -- loopback exposes nothing to the network."
+
+[[expect_none]]
+file = "clean/mcp_http_auth.ts"
+why  = "Bind-all, but requireBearerAuth is present in the file, so the exposure is authenticated."
+
+[[expect_none]]
+file = "clean/plain_express_bind_all.ts"
+why  = "Listening on 0.0.0.0 with no MCP transport in the file -- an ordinary web service, not this rule's subject."
+
+[[expect_none]]
+file = "clean/mcp_stdio_server.py"
+why  = "A stdio MCP server: no network listener at all."

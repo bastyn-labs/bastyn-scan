@@ -874,6 +874,7 @@ impl RuleSet {
             include_str!("../../rules/secrets.yml"),
             include_str!("../../rules/config.yml"),
             include_str!("../../rules/memory.yml"),
+            include_str!("../../rules/mcp_transport.yml"),
         ])
     }
 
