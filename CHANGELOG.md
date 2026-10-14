@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-14
+
 ### Added
 
 - **`BAS-LLM04-002` reports JavaScript or TypeScript that runs a package-manager install as a child process**, such as `spawnSync("npm", ["install", ...])`, because the code then fetches third-party code at runtime. Observation only.
@@ -632,7 +634,8 @@ single point in time. This paragraph prints no number, because it drifts every t
 added. See [Measured coverage](README.md#measured-coverage) for the current count, always derived
 from the gate rather than typed in here.
 
-[Unreleased]: https://github.com/BASTYN-labs/bastyn-scan/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/BASTYN-labs/bastyn-scan/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/BASTYN-labs/bastyn-scan/releases/tag/v0.5.0
 [0.4.0]: https://github.com/BASTYN-labs/bastyn-scan/releases/tag/v0.4.0
 [0.3.0]: https://github.com/BASTYN-labs/bastyn-scan/releases/tag/v0.3.0
 [0.2.2]: https://github.com/BASTYN-labs/bastyn-scan/releases/tag/v0.2.2
