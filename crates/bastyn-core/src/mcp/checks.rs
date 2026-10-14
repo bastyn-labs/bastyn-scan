@@ -110,6 +110,66 @@ pub(crate) fn locate(contents: &str, needle: &str) -> (usize, String) {
     (1, first.trim().to_string())
 }
 
+/// The byte offset where server `name`'s entry starts: its JSON key
+/// (`"name":`), its YAML key (`name:`) or its TOML table header
+/// (`[mcp_servers.name]`). `None` when the file does not spell it that way.
+fn entry_start(contents: &str, name: &str) -> Option<usize> {
+    let quoted = format!("\"{name}\"");
+    let mut offset = 0;
+    for line in contents.split_inclusive('\n') {
+        let trimmed = line.trim_start();
+        let indent = line.len() - trimmed.len();
+        let key_follows =
+            |rest: &str| rest.trim_start().starts_with(':') || rest.trim_start().starts_with('=');
+        let found = if let Some(at) = line.find(&quoted) {
+            key_follows(&line[at + quoted.len()..]).then_some(at)
+        } else if let Some(rest) = trimmed.strip_prefix(name) {
+            rest.trim_start().starts_with(':').then_some(indent)
+        } else if trimmed.starts_with('[') {
+            let header = trimmed
+                .trim_end()
+                .trim_start_matches('[')
+                .trim_end_matches(']');
+            let last = header.rsplit('.').next().unwrap_or_default();
+            (last.trim().trim_matches('"') == name).then_some(indent)
+        } else {
+            None
+        };
+        if let Some(at) = found {
+            return Some(offset + at);
+        }
+        offset += line.len();
+    }
+    None
+}
+
+/// Like [`locate`], but looks only from where server `name`'s entry starts,
+/// so two servers with the same text each get their own line. The first of
+/// `needles` that occurs from there on is used; when none does, or the entry
+/// cannot be found, the search covers the whole file.
+fn locate_in_entry(contents: &str, name: &str, needles: &[&str]) -> (usize, String) {
+    if let Some(start) = entry_start(contents, name) {
+        let first_line = contents[..start].matches('\n').count();
+        for needle in needles.iter().filter(|needle| !needle.is_empty()) {
+            for (index, line) in contents.lines().enumerate().skip(first_line) {
+                if line.contains(needle) {
+                    return (index + 1, line.trim().to_string());
+                }
+            }
+        }
+    }
+    locate(contents, needles.first().copied().unwrap_or_default())
+}
+
+/// The line of server `name`'s bind mount from `source`: the `-v`/`--volume`
+/// form (`source:`), then the `--mount` forms (`src=`, `source=`).
+fn locate_mount(contents: &str, name: &str, source: &str) -> (usize, String) {
+    let volume = format!("{source}:");
+    let src = format!("src={source}");
+    let long_src = format!("source={source}");
+    locate_in_entry(contents, name, &[&volume, &src, &long_src, source])
+}
+
 fn location(relative_path: &Path, line: usize) -> Location {
     Location {
         file: relative_path.to_path_buf(),
@@ -275,7 +335,7 @@ fn check_docker_launch(
             .iter()
             .find(|source| is_broad_filesystem_path(source))
         {
-            let (line, snippet) = locate(contents, source);
+            let (line, snippet) = locate_mount(contents, name, source);
             findings.push(Finding {
                 rule_id: "BAS-MCP-001".to_string(),
                 title: "MCP server granted root or broad filesystem access".to_string(),
@@ -315,7 +375,7 @@ fn check_docker_launch(
                     "the Docker socket, which is full control of the Docker daemon",
                 )
             };
-            let (line, snippet) = locate(contents, needle);
+            let (line, snippet) = locate_in_entry(contents, name, &[needle]);
             findings.push(Finding {
                 rule_id: "BAS-MCP-007".to_string(),
                 title: "MCP server container escapes its isolation".to_string(),
@@ -338,7 +398,7 @@ fn check_docker_launch(
         }
 
         if options.host_network {
-            let (line, snippet) = locate(contents, "--net");
+            let (line, snippet) = locate_in_entry(contents, name, &["--net"]);
             findings.push(Finding {
                 rule_id: "BAS-MCP-008".to_string(),
                 title: "MCP server container shares the host network".to_string(),
@@ -1065,6 +1125,20 @@ mod tests {
 
     fn ids(findings: &[Finding]) -> Vec<&str> {
         findings.iter().map(|f| f.rule_id.as_str()).collect()
+    }
+
+    #[test]
+    fn an_entry_is_found_by_its_json_yaml_or_toml_key() {
+        let json = "{\n  \"mcpServers\": {\n    \"a\": {\"command\": \"docker\"},\n    \"docker\": {}\n  }\n}";
+        let at = entry_start(json, "docker").unwrap();
+        assert_eq!(json[..at].matches('\n').count(), 3);
+        let yaml = "mcpServers:\n  a:\n    command: docker\n  docker:\n    args: []\n";
+        let at = entry_start(yaml, "docker").unwrap();
+        assert_eq!(yaml[..at].matches('\n').count(), 3);
+        let toml = "[mcp_servers.a]\ncommand = \"docker\"\n[mcp_servers.docker]\nargs = []\n";
+        let at = entry_start(toml, "docker").unwrap();
+        assert_eq!(toml[..at].matches('\n').count(), 2);
+        assert!(entry_start("{}", "docker").is_none());
     }
 
     #[test]

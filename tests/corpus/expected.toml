@@ -1761,12 +1761,12 @@ why      = "The Docker socket is bind-mounted into the server's container: full 
 
 [[expect]]
 file     = "mcp/docker_launchers/mcp.json"
-line     = 5
+line     = 9
 rule     = "BAS-MCP-001"
 category = "ZT3"
 kind     = "defect"
 severity = "high"
-why      = "The root bind mount \"/:/host\" in the rootmount server. The reported line is the first line containing the source text \"/\", which is the sock server's args line (documented approximate-location behaviour)."
+why      = "The root bind mount \"/:/host\" in the rootmount server, reported on that server's own args line."
 
 [[expect]]
 file     = "mcp/docker_launchers/mcp.json"
