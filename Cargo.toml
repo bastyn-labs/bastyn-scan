@@ -30,8 +30,8 @@ thiserror = "2.0"
 # do not use out of the binary. Python, TypeScript (which also covers Tsx --
 # see crates/bastyn-core/src/rules/engine.rs module docs) and JavaScript
 # (which also covers its own Jsx dialect) are the only grammars enabled.
-ast-grep-core = "0.45"
-ast-grep-language = { version = "0.45", default-features = false, features = ["tree-sitter-python", "tree-sitter-typescript", "tree-sitter-javascript"] }
+ast-grep-core = "0.50"
+ast-grep-language = { version = "0.50", default-features = false, features = ["tree-sitter-python", "tree-sitter-typescript", "tree-sitter-javascript"] }
 serde_yaml_ng = "0.10"
 toml = "1.1"
 # Data parallelism for the per-file analysis pass. `par_iter().collect()` over
