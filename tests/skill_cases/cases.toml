@@ -499,3 +499,83 @@ outcome_now = "clean"
 rules = []
 why = "Tells the agent never to check out and run a pull request, and to report the files for a person to run."
 pair = "M22"
+
+[[case]]
+id = "M23"
+dir = "malicious/M23-js-helper-path-from-parameter"
+label = "malicious"
+class = "js-code-known-gap"
+outcome_now = "missed"
+rules = []
+why = "The helper joins a caller-supplied extension into a file path with no containment check; the scanner does not analyse JavaScript dataflow, so this is not detected."
+pair = "B32"
+
+[[case]]
+id = "B32"
+dir = "benign/B32-js-helper-path-contained"
+label = "benign"
+class = "js-code-known-gap"
+outcome_now = "clean"
+rules = []
+why = "The helper resolves the path and rejects it when it leaves the media directory."
+pair = "M23"
+
+[[case]]
+id = "M24"
+dir = "malicious/M24-js-host-check-without-dns"
+label = "malicious"
+class = "js-code-known-gap"
+outcome_now = "missed"
+rules = []
+why = "The helper checks the URL hostname by name only and never resolves it before connecting; the scanner does not analyse JavaScript dataflow, so this is not detected."
+pair = "B33"
+
+[[case]]
+id = "B33"
+dir = "benign/B33-js-host-check-resolved"
+label = "benign"
+class = "js-code-known-gap"
+outcome_now = "clean"
+rules = []
+why = "The helper resolves the hostname and checks every returned address before connecting."
+pair = "M24"
+
+[[case]]
+id = "M25"
+dir = "malicious/M25-browse-any-website"
+label = "malicious"
+class = "no-precise-trigger"
+outcome_now = "missed"
+rules = []
+why = "Tells the agent to open any website the user names; there is no precise textual trigger for this wording, so it is not detected."
+pair = "B34"
+
+[[case]]
+id = "B34"
+dir = "benign/B34-browse-allowlisted-website"
+label = "benign"
+class = "no-precise-trigger"
+outcome_now = "clean"
+rules = []
+why = "Restricts browsing to an allowlist and asks the user before any other site."
+pair = "M25"
+
+[[case]]
+id = "M26"
+dir = "malicious/M26-fetch-remote-instructions"
+label = "malicious"
+class = "no-precise-trigger"
+outcome_now = "missed"
+rules = []
+why = "Tells the agent to download instructions from a configured URL and follow them; there is no precise textual trigger for this wording, so it is not detected."
+pair = "B35"
+
+[[case]]
+id = "B35"
+dir = "benign/B35-fetch-remote-instructions-refused"
+label = "benign"
+class = "no-precise-trigger"
+outcome_now = "clean"
+rules = []
+why = "Reads the bundled instructions and says never to download instructions from a URL."
+pair = "M26"

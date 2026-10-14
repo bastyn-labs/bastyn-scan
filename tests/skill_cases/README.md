@@ -12,7 +12,7 @@ The figures it prints are measured on these synthetic cases only. They are not d
 
 ## Pairs (twins)
 
-Every malicious case (M01..M14 and M17..M22) has one benign twin (B11..B23, B25..B31; B11 twins M01, and so on), linked by `pair` in `cases.toml` on both sides. A twin is a copy of the malicious skill (same frontmatter shape, files, pattern position and length) with the minimal edit that makes it benign, so the only difference is intent. Twins carry a different `name:` but the same topic.
+Every malicious case (M01..M14 and M17..M26) has one benign twin (B11..B23, B25..B35; B11 twins M01, and so on), linked by `pair` in `cases.toml` on both sides. A twin is a copy of the malicious skill (same frontmatter shape, files, pattern position and length) with the minimal edit that makes it benign, so the only difference is intent. Twins carry a different `name:` but the same topic.
 
 | pair | the minimal edit in the twin |
 |---|---|
@@ -36,6 +36,12 @@ Every malicious case (M01..M14 and M17..M22) has one benign twin (B11..B23, B25.
 | M20 / B29 | the install command becomes a sentence saying not to run it and to ask the user to install the helpers |
 | M21 / B30 | the script source changes from a public CDN host to a bundled local file |
 | M22 / B31 | the instruction to check out and run the change becomes a sentence saying never to do that |
+| M23 / B32 | the helper resolves the path and rejects it when it leaves the media directory |
+| M24 / B33 | the helper resolves the hostname and checks every returned address before connecting |
+| M25 / B34 | browsing is limited to an allowlist, with a question to the user for any other site |
+| M26 / B35 | the instruction to download and follow remote instructions becomes a sentence saying never to do that |
+
+M23..M26 are recorded known misses (`outcome_now = "missed"`): the scanner does not analyse JavaScript dataflow (M23, M24) and has no precise textual trigger for the wording in M25 and M26. Their twins are `clean`, so these pairs are not separated.
 
 B06 (family emoji with zero-width joiners and accents) and B24 (a leading byte-order mark only) are unpaired benign cases for those two behaviours.
 
