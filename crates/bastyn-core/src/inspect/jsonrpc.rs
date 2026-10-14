@@ -19,6 +19,23 @@ pub(crate) const MODERN_VERSION: &str = "2026-07-28";
 /// The last revision that required an `initialize` handshake.
 pub(crate) const LEGACY_VERSION: &str = "2025-11-25";
 
+/// The protocol version the server chose in its `initialize` result, or the
+/// legacy constant when the field is absent, not a string, or not shaped like
+/// a version (letters, digits and hyphens, at most 32 characters).
+pub(crate) fn negotiated_version(result: &Value) -> String {
+    result
+        .get("protocolVersion")
+        .and_then(Value::as_str)
+        .filter(|version| {
+            !version.is_empty()
+                && version.len() <= 32
+                && version
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        })
+        .map_or_else(|| LEGACY_VERSION.to_owned(), str::to_owned)
+}
+
 /// The `_meta` block a modern request carries.
 pub(crate) fn client_meta(version: &str) -> Value {
     json!({
@@ -172,6 +189,20 @@ mod tests {
                 assert!(data.is_some());
             }
             other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_negotiated_version_falls_back_when_absent_or_unusable() {
+        let chosen = serde_json::json!({"protocolVersion": "2025-06-18"});
+        assert_eq!(negotiated_version(&chosen), "2025-06-18");
+        for result in [
+            serde_json::json!({}),
+            serde_json::json!({"protocolVersion": 7}),
+            serde_json::json!({"protocolVersion": ""}),
+            serde_json::json!({"protocolVersion": "bad\r\nvalue"}),
+        ] {
+            assert_eq!(negotiated_version(&result), LEGACY_VERSION);
         }
     }
 

@@ -1123,11 +1123,39 @@ mod tests {
         );
     }
 
-    /// The three coverage lists name what was read, each file once, and
-    /// `coverage.skipped` is `skipped` with the reason as data.
     /// A tools snapshot flows through its own analyser, is counted as scanned
     /// exactly once, and is not listed as an MCP configuration or an
     /// instruction file.
+    #[test]
+    fn two_container_servers_with_the_same_problem_are_each_reported() {
+        let config = r#"{
+  "mcpServers": {
+    "first": {
+      "command": "docker",
+      "args": ["run", "--rm", "-i", "--privileged", "-v", "/:/x", "img@sha256:1"]
+    },
+    "second": {
+      "command": "podman",
+      "args": ["run", "--rm", "-i", "--privileged", "-v", "/:/x", "img@sha256:1"]
+    }
+  }
+}
+"#;
+        let dir = tree(&[(".mcp.json", config)]);
+
+        let report = scan(dir.path(), &offline()).unwrap();
+
+        for rule in ["BAS-MCP-007", "BAS-MCP-001"] {
+            let lines: Vec<usize> = report
+                .findings
+                .iter()
+                .filter(|f| f.rule_id == rule)
+                .map(|f| f.location.line)
+                .collect();
+            assert_eq!(lines, [5, 9], "{rule}: {:#?}", report.findings);
+        }
+    }
+
     #[test]
     fn a_tools_snapshot_is_checked_and_counted_once() {
         let snapshot = r#"{"schema":"bastyn-tools-snapshot/1","server":{"name":"s","transport":"stdio","protocol_era":"modern","protocol_version":"2026-07-28"},"tools":[
@@ -1144,6 +1172,8 @@ mod tests {
         assert!(report.skipped.is_empty(), "{:#?}", report.skipped);
     }
 
+    /// The three coverage lists name what was read, each file once, and
+    /// `coverage.skipped` is `skipped` with the reason as data.
     #[test]
     fn coverage_lists_the_agent_files_that_were_read_and_parsed() {
         let mut bundle = String::from("!function(e,t){");

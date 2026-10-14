@@ -163,12 +163,12 @@ pub(crate) struct InspectServerArgs {
     pub(crate) config: Option<PathBuf>,
 
     /// Name of the server entry in `--config`.
-    #[arg(long, value_name = "NAME", requires = "config")]
+    #[arg(long, value_name = "NAME", requires = "config", conflicts_with = "url")]
     pub(crate) server: Option<String>,
 
     /// Allow starting the entry's command. Without it a `command` entry is
     /// refused and nothing runs.
-    #[arg(long, requires = "config")]
+    #[arg(long, requires = "config", conflicts_with = "url")]
     pub(crate) allow_spawn: bool,
 
     /// Write the snapshot here instead of standard output.

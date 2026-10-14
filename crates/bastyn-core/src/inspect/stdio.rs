@@ -16,13 +16,16 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 
 use super::http::{error_text, tools_of};
-use super::jsonrpc::{
-    self, LEGACY_VERSION, MODERN_VERSION, Reply, is_recognised_modern_error, next_cursor,
-};
+use super::jsonrpc::{self, MODERN_VERSION, Reply, is_recognised_modern_error, next_cursor};
 use super::{Capture, Era, InspectError, Limits};
 
 /// How long a server gets to exit on its own after its input is closed.
 const GRACE: Duration = Duration::from_secs(2);
+
+/// How many output lines the reader thread may hold ahead of the consumer.
+/// A line can be as large as the body cap (4 MiB by default), so a small
+/// bound keeps a flooding server from filling memory.
+const LINE_BUFFER: usize = 2;
 
 /// A server started as a local process.
 #[derive(Debug, Clone)]
@@ -80,7 +83,7 @@ impl Session {
             let _ = child.wait();
             return Err(InspectError::Spawn("the server has no output".into()));
         };
-        let (sender, lines) = mpsc::sync_channel(64);
+        let (sender, lines) = mpsc::sync_channel(LINE_BUFFER);
         let cap = limits.max_body_bytes;
         thread::spawn(move || {
             let mut reader = BufReader::new(stdout);
@@ -229,8 +232,8 @@ impl Session {
             }
             _ => {}
         }
-        match self.call(jsonrpc::legacy_initialize)? {
-            Some(Reply::Result(_)) => {}
+        let version = match self.call(jsonrpc::legacy_initialize)? {
+            Some(Reply::Result(result)) => jsonrpc::negotiated_version(&result),
             Some(Reply::Error {
                 code,
                 message,
@@ -243,12 +246,12 @@ impl Session {
                 )));
             }
             None => return Err(self.no_reply()),
-        }
+        };
         self.send(&jsonrpc::notification("notifications/initialized"))?;
         let tools = self.list_pages(false, limits)?;
         Ok(Capture {
             era: Era::Legacy,
-            protocol_version: LEGACY_VERSION.to_owned(),
+            protocol_version: version,
             tools,
         })
     }
@@ -349,6 +352,15 @@ mod tests {
         let capture = capture_stdio(&sh(script), &Limits::default()).unwrap();
         assert_eq!(capture.era, Era::Legacy);
         assert_eq!(capture.tools.len(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_legacy_stdio_server_reports_the_version_it_chose() {
+        let script = r#"read a; printf '%s\n' '{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"Method not found"}}'; read b; printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"protocolVersion":"2025-06-18","capabilities":{}}}'; read c; read d; printf '%s\n' '{"jsonrpc":"2.0","id":3,"result":{"tools":[]}}'"#;
+        let capture = capture_stdio(&sh(script), &Limits::default()).unwrap();
+        assert_eq!(capture.era, Era::Legacy);
+        assert_eq!(capture.protocol_version, "2025-06-18");
     }
 
     #[cfg(unix)]

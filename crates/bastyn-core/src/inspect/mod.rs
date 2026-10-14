@@ -116,14 +116,32 @@ pub fn is_plain_http_to_remote_host(url: &str) -> bool {
     plain && !guard::is_loopback_host(url)
 }
 
+/// True for characters that should never reach a terminal or a reader
+/// unescaped: control characters (including DEL and the C1 range) and the
+/// invisible format and bidirectional characters that can hide or reorder
+/// text.
+pub(crate) fn is_hidden_char(c: char) -> bool {
+    c.is_control()
+        || matches!(
+            u32::from(c),
+            0x200B..=0x200F
+                | 0x202A..=0x202E
+                | 0x2060..=0x2064
+                | 0x2066..=0x2069
+                | 0xFEFF
+                | 0xE0000..=0xE007F
+        )
+}
+
 /// Make text from a server safe to print: every control character, including
-/// the escape byte that starts terminal sequences, becomes a visible escape
-/// such as `\u{1b}`.
+/// the escape byte that starts terminal sequences, and every invisible format
+/// or bidirectional character becomes a visible escape such as `\u{1b}` or
+/// `\u{202e}`.
 #[must_use]
 pub fn escape_control(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for c in text.chars() {
-        if c.is_control() {
+        if is_hidden_char(c) {
             out.extend(c.escape_default());
         } else {
             out.push(c);
@@ -363,6 +381,23 @@ mod tests {
     fn control_characters_are_made_visible() {
         assert_eq!(escape_control("a\u{1b}[31mb\n"), "a\\u{1b}[31mb\\n");
         assert_eq!(escape_control("plain é"), "plain é");
+        assert_eq!(escape_control("\u{7f}\u{85}"), "\\u{7f}\\u{85}");
+    }
+
+    #[test]
+    fn invisible_format_and_bidirectional_characters_are_made_visible() {
+        assert_eq!(escape_control("a\u{202e}b"), "a\\u{202e}b");
+        for c in [
+            '\u{200b}',
+            '\u{200f}',
+            '\u{2060}',
+            '\u{2066}',
+            '\u{feff}',
+            '\u{e0041}',
+        ] {
+            let escaped = escape_control(&c.to_string());
+            assert!(escaped.starts_with("\\u{"), "{escaped}");
+        }
     }
 
     #[test]

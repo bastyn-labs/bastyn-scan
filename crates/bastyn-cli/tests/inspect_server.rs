@@ -190,7 +190,23 @@ fn allow_spawn_runs_a_modern_stdio_server() {
 }
 
 #[test]
-fn a_metadata_address_is_refused_by_name() {
+fn a_metadata_hostname_is_refused_by_name_without_a_lookup() {
+    let output = bastyn()
+        .args([
+            "inspect-server",
+            "--url",
+            "http://metadata.google.internal/computeMetadata/v1/",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("metadata.google.internal"), "{stderr}");
+    assert!(stderr.contains("refusing to connect"), "{stderr}");
+}
+
+#[test]
+fn a_metadata_ip_literal_is_refused() {
     let output = bastyn()
         .args(["inspect-server", "--url", "http://169.254.169.254/"])
         .output()
@@ -235,23 +251,37 @@ fn url_and_config_together_are_rejected_by_the_parser() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("cannot be used with"), "{stderr}");
+    assert!(stderr.contains("--url"), "{stderr}");
 }
 
 #[test]
-fn server_and_allow_spawn_require_config() {
-    for extra in [["--server", "s"], ["--allow-spawn", ""]] {
+fn server_and_allow_spawn_cannot_be_used_with_url() {
+    for (flag, extra) in [("--server", Some("s")), ("--allow-spawn", None)] {
         let mut command = bastyn();
-        command.args(["inspect-server", "--url", "http://127.0.0.1:1/"]);
-        command.arg(extra[0]);
-        if !extra[1].is_empty() {
-            command.arg(extra[1]);
+        command.args(["inspect-server", "--url", "http://127.0.0.1:1/", flag]);
+        if let Some(value) = extra {
+            command.arg(value);
         }
-        assert_eq!(
-            command.output().unwrap().status.code(),
-            Some(2),
-            "{extra:?}"
-        );
+        let output = command.output().unwrap();
+        assert_eq!(output.status.code(), Some(2), "{flag}");
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(stderr.contains("cannot be used with"), "{flag}: {stderr}");
+        assert!(stderr.contains(flag), "{flag}: {stderr}");
     }
+}
+
+#[test]
+fn allow_spawn_without_config_names_the_missing_arguments() {
+    let output = bastyn()
+        .args(["inspect-server", "--allow-spawn"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("required arguments"), "{stderr}");
+    assert!(stderr.contains("--config"), "{stderr}");
 }
 
 #[test]

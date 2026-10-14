@@ -11,6 +11,7 @@ The design rule behind everything: **say less, be right.** A missing control is 
   - `src/walk.rs`: directory traversal, returning sorted paths.
   - `src/rules/`: the rule engine, built on `ast-grep`. `schema.rs` defines the rule format, `engine.rs` runs it, `tests*.rs` are its unit tests.
   - `src/flow/`: the dataflow graph behind a rule's `flow:` clause. It answers where a value came from (`catalogue.rs`, `graph.rs`) and whether a guard dominates a sink (`guards.rs`). Python only.
+  - `src/inspect/`: captures an MCP server's tools over Streamable HTTP or stdio into a snapshot file. Used only by `bastyn inspect-server`; `scan` never connects to a server.
   - `src/mcp/`: MCP server configuration checks. `src/infra/`: Dockerfile and Compose checks. `src/cve/`: dependency manifests and vulnerability lookup (`--offline` skips the network).
   - `src/finding.rs`, `src/category.rs`, `src/compliance.rs`, `src/report.rs`: the report model and the framework categories findings map to.
   - `src/render/`: text, JSON and SARIF output.

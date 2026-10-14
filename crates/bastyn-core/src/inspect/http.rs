@@ -253,8 +253,8 @@ fn legacy_capture(
         limits,
     )?;
     check_status(init.status)?;
-    match decode(&init, 2) {
-        Some(Reply::Result(_)) => {}
+    let version = match decode(&init, 2) {
+        Some(Reply::Result(result)) => jsonrpc::negotiated_version(&result),
         Some(Reply::Error {
             code,
             message,
@@ -272,10 +272,10 @@ fn legacy_capture(
                 "the reply to initialize was not a JSON-RPC answer".into(),
             ));
         }
-    }
+    };
     let session = init.session_id;
     let meta = RequestMeta {
-        version: Some(LEGACY_VERSION),
+        version: Some(version.as_str()),
         method: None,
         session: session.as_deref(),
     };
@@ -322,7 +322,7 @@ fn legacy_list(
                 if cursor.is_none() {
                     return Ok(Capture {
                         era: Era::Legacy,
-                        protocol_version: LEGACY_VERSION.to_owned(),
+                        protocol_version: meta.version.unwrap_or(LEGACY_VERSION).to_owned(),
                         tools,
                     });
                 }
@@ -668,6 +668,24 @@ mod tests {
         assert_eq!(header(&seen[3], "mcp-session-id"), Some("sess-1"));
         assert_eq!(seen[4].method, "DELETE");
         assert_eq!(header(&seen[4], "mcp-session-id"), Some("sess-1"));
+    }
+
+    #[test]
+    fn a_legacy_server_that_picks_another_version_is_spoken_to_in_it() {
+        let init = r#"{"jsonrpc":"2.0","id":2,"result":{"protocolVersion":"2025-06-18","capabilities":{}}}"#;
+        let tools = r#"{"jsonrpc":"2.0","id":3,"result":{"tools":[]}}"#;
+        let (url, log) = serve(vec![
+            reply("400 Bad Request", "text/plain", "missing header"),
+            json_reply(init),
+            empty_reply("202 Accepted"),
+            json_reply(tools),
+        ]);
+        let capture = capture_http(&target(url), &Limits::default()).unwrap();
+        assert_eq!(capture.era, Era::Legacy);
+        assert_eq!(capture.protocol_version, "2025-06-18");
+        let seen = log.lock().unwrap();
+        assert_eq!(header(&seen[2], "mcp-protocol-version"), Some("2025-06-18"));
+        assert_eq!(header(&seen[3], "mcp-protocol-version"), Some("2025-06-18"));
     }
 
     #[test]
