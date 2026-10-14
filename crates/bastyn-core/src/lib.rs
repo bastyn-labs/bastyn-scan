@@ -13,6 +13,7 @@ pub mod compliance;
 pub mod cve;
 pub mod finding;
 pub mod infra;
+pub mod inspect;
 pub mod instructions;
 pub mod mcp;
 pub mod observe;
