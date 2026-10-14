@@ -45,7 +45,7 @@ M23..M26 are recorded known misses (`outcome_now = "missed"`): the scanner does 
 
 B06 (family emoji with zero-width joiners and accents) and B24 (a leading byte-order mark only) are unpaired benign cases for those two behaviours.
 
-The harness checks that each pair has opposite labels, that both cases exist and that the link is symmetric, and prints a pair table on every run: both outcomes and whether the scanner separates the pair (malicious `detected` and twin `clean`), ending with `pairs separated: X of N`, where N is the number of malicious cases.
+The harness checks that each pair has opposite labels, that both cases exist and that the link is symmetric, and prints a pair table on every run: both outcomes and whether the scanner separates the pair (malicious `detected` and twin `clean`), ending with `pairs separated: X of N`, where N is the number of pairs.
 
 ## Labeling rules
 

@@ -15,6 +15,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **`BAS-SKILL-008` reports a skill template that loads a script from a public CDN host**, so the page it produces runs code the skill does not pin. Observation only; skipped when the text refuses it.
 - **`BAS-SKILL-009` reports a skill that tells the agent to check out a pull request and run it**, which executes code the agent did not write. Observation only; skipped when the text refuses it.
 
+### Changed
+
+- **Skill phrase checks now match whole words**: a phrase no longer matches inside a longer word, and a trailing plural `s` is still accepted.
+
 ### Fixed
 
 - **`BAS-ZT1-003` no longer reports a provider-key-shaped literal that contains the word `secret` or `leak`**, such as the dummy values used in test fixtures. A random-looking key is still reported.
