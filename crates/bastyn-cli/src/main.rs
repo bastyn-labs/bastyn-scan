@@ -24,6 +24,7 @@ fn main() -> ExitCode {
             commands::scan::run(args, &cli.global).map(commands::scan::Outcome::exit_code)
         }
         Command::ProjectId(args) => commands::project_id::run(args).map(|()| exit::CLEAN),
+        Command::InspectServer(args) => commands::inspect_server::run(args).map(|()| exit::CLEAN),
     };
 
     match result {

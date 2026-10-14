@@ -119,13 +119,6 @@ pub(crate) fn check_url(url: &str) -> Result<(), GuardError> {
 }
 
 /// True when the URL's host is `localhost` or a loopback literal.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the stdio client and the command line use it to decide on warnings; remove with them"
-    )
-)]
 pub(crate) fn is_loopback_host(url: &str) -> bool {
     let Ok(uri) = url.parse::<Uri>() else {
         return false;

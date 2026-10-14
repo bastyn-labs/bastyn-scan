@@ -25,7 +25,7 @@
 
 pub(crate) mod checks;
 mod launch;
-mod model;
+pub(crate) mod model;
 
 use std::path::Path;
 
@@ -96,6 +96,36 @@ pub fn inspect_config(relative_path: &Path, contents: &str) -> (Vec<Finding>, bo
             false,
         ),
     }
+}
+
+/// Pick one server entry out of a config file's text.
+///
+/// `relative_path` selects the parser by its extension.
+///
+/// # Errors
+///
+/// Returns a message when the contents do not parse, or when no server has
+/// that name; the second message lists the names that exist.
+pub(crate) fn load_server(
+    relative_path: &Path,
+    contents: &str,
+    name: &str,
+) -> std::result::Result<model::ServerEntry, String> {
+    let mut config = model::parse(model::Format::detect(relative_path), contents)
+        .map_err(|reason| format!("could not parse {}: {reason}", relative_path.display()))?;
+    if let Some(entry) = config.mcp_servers.remove(name) {
+        return Ok(entry);
+    }
+    let mut available: Vec<&str> = config.mcp_servers.keys().map(String::as_str).collect();
+    available.sort_unstable();
+    Err(format!(
+        "no server named {name}; available: {}",
+        if available.is_empty() {
+            "none".to_owned()
+        } else {
+            available.join(", ")
+        }
+    ))
 }
 
 #[cfg(test)]

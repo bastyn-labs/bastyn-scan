@@ -217,6 +217,26 @@ An execution error outranks findings, so a scan that could not run never returns
 
 A CVE lookup that could not run, or that ran only partly, does not change the exit code. Every output format says so: the terminal summary, the JSON `cve.status` field (`unreachable` or `partial`), and a SARIF tool-execution notification.
 
+### `bastyn inspect-server`
+
+Connects to one MCP server and writes the tools it lists to a snapshot file.
+
+```sh
+bastyn inspect-server --url <URL> [--header 'Name: value']... [--out <FILE>]
+bastyn inspect-server --config <FILE> --server <NAME> [--allow-spawn] [--out <FILE>]
+```
+
+| Argument | Effect |
+| --- | --- |
+| `--url <URL>` | A Streamable HTTP server. Conflicts with `--config` |
+| `--header 'Name: value'` | A request header sent with `--url`, for example a bearer token. Repeatable |
+| `--config <FILE>` | An MCP config file holding the server entry. Needs `--server` |
+| `--server <NAME>` | The entry's name in `--config`. An entry with a `url` is captured over HTTP using its `headers`; an entry with a `command` is run over stdio, but only with `--allow-spawn` |
+| `--allow-spawn` | Permit starting the entry's `command`. Without it the command is refused and nothing runs |
+| `--out <FILE>` | Write the snapshot here instead of standard output |
+
+A summary line (`captured N tools from <name> (<era>)`) goes to standard error. Exit `0` means a snapshot was written. Exit `2` means it could not be: a refused address or command, a connection failure, a server that needs credentials, an unusable config or a reply outside the protocol. Exit `1` is not used. Name the file `<name>.bastyn-tools.json`, which is the name `scan` looks for. The snapshot is deterministic: tools are sorted and keys are ordered, so two captures of an unchanged server are byte-identical. Text that came from the server is shown with control characters escaped.
+
 ### What it checks
 
 **55 rule ids** over the Python, TypeScript and JavaScript ASTs, via [`ast-grep`](https://ast-grep.github.io), loaded from `crates/bastyn-core/rules/*.yml`. A rule written for JavaScript is compiled against the JavaScript, TypeScript and TSX grammars alike, which is what "JS/TS" means below. Each rule's severity, description and remediation text live in those files, which are the reference this table summarises.
@@ -273,6 +293,17 @@ Three things are left out on purpose, and all three are listed in the report's "
 The scan itself touches the network in one place: the CVE lookup. It sends dependency names and versions to OSV, never your code and never your findings. This is what `npm audit` and `pip-audit` already do. After a completed scan, Bastyn also sends a small anonymous summary, described under [Reporting](#reporting).
 
 With no connection, Bastyn skips CVEs and says so under "Coverage gaps", with the reason on the line. It never hangs, never fails the scan because OSV is down, and never reports zero CVEs as though the check had run. `--offline` forces the skip, and also stops the summary upload.
+
+`bastyn scan` is unchanged by `inspect-server`. `bastyn inspect-server` is the only command that connects to a server you name or starts a command from a config, and it does so only when you run it. It sends no scan summary. It refuses link-local and cloud-metadata addresses and any scheme other than http or https, never follows redirects, caps the size of a reply, the number of pages and the time, runs stdio commands only with `--allow-spawn` and with a cleared environment (plus `PATH`, `HOME` and the entry's own `env`), and does no OAuth. A plain `http://` URL to a non-local host prints a warning, because the traffic and any `--header` values are not encrypted.
+
+Known limitations of `inspect-server`:
+
+- The address check resolves the host, and the HTTP client resolves it again when it connects. A DNS server that answers differently the second time can defeat the check.
+- The time limit applies to each request, not to the whole capture. A slow server can hold the command for up to the page cap (20 pages) times the per-request limit (30 seconds).
+- For stdio, shutdown closes the server's input, waits about two seconds, then kills only the direct child process. A grandchild process the server started may survive.
+- The command is untested against real-world servers. It has been tested only against local fake servers.
+
+Run it in a container or sandbox for servers you do not trust.
 
 ### Output for machines
 

@@ -138,6 +138,52 @@ pub(crate) enum Command {
     /// Reads the directory's git configuration and never runs `git`, writes
     /// no file and uses no network.
     ProjectId(ProjectIdArgs),
+
+    /// Connect to an MCP server and write its tool list to a snapshot file.
+    ///
+    /// This is the one command that connects to a server you name, or starts
+    /// a command from a config file, and only when you run it. `scan` makes
+    /// no connection to MCP servers.
+    InspectServer(InspectServerArgs),
+}
+
+/// Arguments for `bastyn inspect-server`.
+#[derive(Debug, Args)]
+pub(crate) struct InspectServerArgs {
+    /// URL of a Streamable HTTP server.
+    #[arg(long, conflicts_with = "config", required_unless_present = "config")]
+    pub(crate) url: Option<String>,
+
+    /// Request header for `--url`, as `Name: value`. Repeatable.
+    #[arg(long = "header", value_name = "NAME: VALUE", requires = "url", value_parser = parse_header)]
+    pub(crate) headers: Vec<(String, String)>,
+
+    /// MCP config file holding the server entry.
+    #[arg(long, value_name = "FILE", requires = "server")]
+    pub(crate) config: Option<PathBuf>,
+
+    /// Name of the server entry in `--config`.
+    #[arg(long, value_name = "NAME", requires = "config")]
+    pub(crate) server: Option<String>,
+
+    /// Allow starting the entry's command. Without it a `command` entry is
+    /// refused and nothing runs.
+    #[arg(long, requires = "config")]
+    pub(crate) allow_spawn: bool,
+
+    /// Write the snapshot here instead of standard output.
+    #[arg(long, value_name = "FILE")]
+    pub(crate) out: Option<PathBuf>,
+}
+
+/// Split `Name: value` into its two halves.
+fn parse_header(text: &str) -> Result<(String, String), String> {
+    match text.split_once(':') {
+        Some((name, value)) if !name.trim().is_empty() => {
+            Ok((name.trim().to_owned(), value.trim().to_owned()))
+        }
+        _ => Err("expected `Name: value`".to_owned()),
+    }
 }
 
 /// Arguments for `bastyn project-id`.
@@ -252,7 +298,9 @@ mod tests {
     fn scan_args(cli: &Cli) -> &ScanArgs {
         match &cli.command {
             Command::Scan(args) => args,
-            Command::ProjectId(_) => unreachable!("these tests parse `scan`"),
+            Command::ProjectId(_) | Command::InspectServer(_) => {
+                unreachable!("these tests parse `scan`")
+            }
         }
     }
 
