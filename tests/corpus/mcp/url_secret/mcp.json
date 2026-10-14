@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "metrics": {
+      "url": "https://metrics.example.com/mcp?api_key=sk-live-abc123def456ghi789jkl"
+    }
+  }
+}

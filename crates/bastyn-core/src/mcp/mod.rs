@@ -17,6 +17,7 @@
 //! | `BAS-MCP-003` | A `tools`/`permissions`/`allowedTools` wildcard grant | `ZT2` |
 //! | `BAS-MCP-004` | An `env` value shaped like a live credential | `ZT1` |
 //! | `BAS-MCP-005` | A server launched from a registry with no version pin | `LLM04` |
+//! | `BAS-MCP-009` | A literal credential in a server `url` query string | `ZT1` |
 //! | `BAS-LLM03-020` | A client-wide or per-server `autoApprove`/`alwaysAllow` wildcard | `LLM03` |
 
 pub(crate) mod checks;
@@ -299,6 +300,20 @@ headers = {}
             "this config is vulnerable on five independent axes, including an \
              unpinned registry launch"
         );
+    }
+
+    /// One server with a secret in its URL query, written in all three
+    /// formats, must produce exactly `BAS-MCP-009`.
+    #[test]
+    fn url_secret_in_json_yaml_toml_produces_the_same_finding() {
+        let json = r#"{"mcpServers": {"m": {"url": "https://m.example.com/mcp?api_key=sk-live-abc123def456ghi789jkl"}}}"#;
+        let yaml = "mcpServers:\n  m:\n    url: https://m.example.com/mcp?api_key=sk-live-abc123def456ghi789jkl\n";
+        let toml = "[mcpServers.m]\nurl = \"https://m.example.com/mcp?api_key=sk-live-abc123def456ghi789jkl\"\n";
+        for (file, text) in [("mcp.json", json), ("mcp.yaml", yaml), ("mcp.toml", toml)] {
+            let findings = inspect(Path::new(file), text).unwrap();
+            let ids: Vec<&str> = findings.iter().map(|f| f.rule_id.as_str()).collect();
+            assert_eq!(ids, ["BAS-MCP-009"], "{file}: {findings:#?}");
+        }
     }
 }
 

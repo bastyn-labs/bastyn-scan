@@ -60,6 +60,15 @@ pub(crate) struct ServerEntry {
     /// Headers sent to `url`.
     #[serde(default)]
     pub(crate) headers: HashMap<String, serde_json::Value>,
+    /// The transport this entry declares under the `type` key, if any. Kept
+    /// as a raw value, and separate from [`Self::transport_name`], so an
+    /// entry that sets both keys, or sets either to something unexpected,
+    /// still parses instead of becoming a `BAS-MCP-000` finding.
+    #[serde(default, rename = "type")]
+    pub(crate) transport_type: Option<serde_json::Value>,
+    /// The transport this entry declares under the `transport` key, if any.
+    #[serde(default, rename = "transport")]
+    pub(crate) transport_name: Option<serde_json::Value>,
     /// A `tools` grant: `"*"`, an array of tool names, or absent.
     #[serde(default)]
     pub(crate) tools: Option<serde_json::Value>,
@@ -79,6 +88,67 @@ pub(crate) struct ServerEntry {
     /// `autoApprove`, same shape.
     #[serde(default)]
     pub(crate) always_allow: Option<serde_json::Value>,
+}
+
+/// How a server is reached.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Transport {
+    /// The client launches a local program and talks over its standard streams.
+    Stdio,
+    /// One HTTP endpoint accepting POST.
+    StreamableHttp,
+    /// The older HTTP+SSE transport.
+    Sse,
+    /// A `url` with no declared transport.
+    RemoteUnspecified,
+}
+
+impl Transport {
+    /// Human-readable name used in finding descriptions.
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Stdio => "stdio",
+            Self::StreamableHttp => "Streamable HTTP",
+            Self::Sse => "SSE",
+            Self::RemoteUnspecified => "remote",
+        }
+    }
+}
+
+impl ServerEntry {
+    /// The transport this entry uses: an explicit, recognised `type` or
+    /// `transport` value wins; otherwise a `url` means a remote server and a
+    /// `command` means stdio. A URL path is never used to guess SSE.
+    pub(crate) fn transport(&self) -> Option<Transport> {
+        let declared = [self.transport_type.as_ref(), self.transport_name.as_ref()]
+            .into_iter()
+            .flatten()
+            .filter_map(serde_json::Value::as_str)
+            .find_map(parse_transport_name);
+        if declared.is_some() {
+            return declared;
+        }
+        if self.url.is_some() {
+            Some(Transport::RemoteUnspecified)
+        } else if self.command.is_some() {
+            Some(Transport::Stdio)
+        } else {
+            None
+        }
+    }
+}
+
+/// Map a declared transport name to a [`Transport`]. The accepted spellings
+/// are the ones MCP clients document; anything else is ignored.
+fn parse_transport_name(name: &str) -> Option<Transport> {
+    match name.trim().to_ascii_lowercase().as_str() {
+        "stdio" => Some(Transport::Stdio),
+        "sse" => Some(Transport::Sse),
+        "http" | "streamable-http" | "streamablehttp" | "streamable_http" => {
+            Some(Transport::StreamableHttp)
+        }
+        _ => None,
+    }
 }
 
 /// Which serialisation format a config file's text is written in.
@@ -154,5 +224,74 @@ mod tests {
             r#"{"mcpServers": {}, "$schema": "https://example.com", "vendorExtension": 1}"#,
         );
         assert!(config.is_ok(), "unexpected error: {config:?}");
+    }
+
+    fn entry(json: &str) -> ServerEntry {
+        serde_json::from_str(json).unwrap()
+    }
+
+    #[test]
+    fn explicit_type_wins_over_inference() {
+        assert_eq!(
+            entry(r#"{"url": "https://x/mcp", "type": "sse"}"#).transport(),
+            Some(Transport::Sse)
+        );
+        assert_eq!(
+            entry(r#"{"url": "https://x/mcp", "type": "HTTP"}"#).transport(),
+            Some(Transport::StreamableHttp)
+        );
+        assert_eq!(
+            entry(r#"{"url": "https://x/mcp", "transport": "streamable-http"}"#).transport(),
+            Some(Transport::StreamableHttp)
+        );
+        assert_eq!(
+            entry(r#"{"command": "node", "type": "stdio"}"#).transport(),
+            Some(Transport::Stdio)
+        );
+    }
+
+    #[test]
+    fn transport_is_inferred_when_not_declared() {
+        assert_eq!(
+            entry(r#"{"url": "https://x/mcp"}"#).transport(),
+            Some(Transport::RemoteUnspecified)
+        );
+        assert_eq!(
+            entry(r#"{"command": "node"}"#).transport(),
+            Some(Transport::Stdio)
+        );
+        assert_eq!(entry("{}").transport(), None);
+    }
+
+    #[test]
+    fn a_url_path_ending_in_sse_is_not_read_as_the_sse_transport() {
+        assert_eq!(
+            entry(r#"{"url": "https://x/sse"}"#).transport(),
+            Some(Transport::RemoteUnspecified)
+        );
+    }
+
+    #[test]
+    fn type_and_transport_together_or_odd_shapes_still_parse() {
+        let both = parse(
+            Format::Json,
+            r#"{"mcpServers": {"a": {"url": "https://x", "type": "http", "transport": "sse"}}}"#,
+        );
+        assert!(both.is_ok(), "{both:?}");
+        let object = parse(
+            Format::Json,
+            r#"{"mcpServers": {"a": {"url": "https://x", "transport": {"kind": "http"}}}}"#,
+        );
+        assert!(object.is_ok(), "{object:?}");
+        let number = parse(
+            Format::Json,
+            r#"{"mcpServers": {"a": {"command": "x", "type": 3}}}"#,
+        );
+        assert!(number.is_ok(), "{number:?}");
+        // An unrecognised or non-string value falls back to inference.
+        assert_eq!(
+            entry(r#"{"command": "x", "type": 3}"#).transport(),
+            Some(Transport::Stdio)
+        );
     }
 }

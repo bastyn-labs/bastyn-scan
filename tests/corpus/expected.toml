@@ -902,6 +902,19 @@ kind     = "defect"
 severity = "high"
 why      = "The opsbot-runbooks server is launched from a package registry (npx -y / uvx) with no version pin, so what runs can change without a change to this repository."
 
+[[expect]]
+file     = "mcp/url_secret/mcp.json"
+line     = 4
+rule     = "BAS-MCP-009"
+category = "ZT1"
+kind     = "defect"
+severity = "high"
+why      = "A literal api_key value sits in the query string of the server URL; the https scheme keeps BAS-MCP-002 quiet, so this is the only finding."
+
+[[expect_none]]
+file = "clean/mcp_launchers/mcp.json"
+why  = "URLs with an interpolated key, a short placeholder token and ordinary query parameters -- every shape BAS-MCP-009 must walk past. Later launcher near-misses are appended to this file."
+
 # =====================================================================
 # clean/ — same jobs, done safely. Every near-miss that fools naive rules.
 # =====================================================================

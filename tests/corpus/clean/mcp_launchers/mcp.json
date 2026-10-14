@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "templated": {
+      "url": "https://metrics.example.com/mcp?api_key=${METRICS_API_KEY}"
+    },
+    "placeholder": {
+      "url": "https://metrics.example.com/mcp?token=YOUR_TOKEN"
+    },
+    "plain-query": {
+      "url": "https://metrics.example.com/mcp?region=eu-west-1&page=2"
+    }
+  }
+}

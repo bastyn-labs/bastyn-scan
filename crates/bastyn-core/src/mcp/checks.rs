@@ -43,6 +43,7 @@ pub(crate) fn run_all(config: &McpConfig, relative_path: &Path, contents: &str) 
             relative_path,
             contents,
         ));
+        findings.extend(check_secret_in_url(name, entry, relative_path, contents));
         findings.extend(check_auto_approve_wildcard(
             name,
             entry,
@@ -550,6 +551,53 @@ fn check_hardcoded_credentials(
         .collect()
 }
 
+/// `BAS-MCP-009` — a literal credential in the query string of a server URL.
+///
+/// The URL is committed to the repository and sent with every request, and
+/// URLs are routinely written to access logs, so a key placed there is
+/// exposed twice over. Reported only when the parameter's name suggests a
+/// secret AND its value has the shape of one, the same two-part evidence
+/// `BAS-MCP-004` requires; a `${VAR}` placeholder reports nothing.
+fn check_secret_in_url(
+    name: &str,
+    entry: &ServerEntry,
+    relative_path: &Path,
+    contents: &str,
+) -> Option<Finding> {
+    let url = entry.url.as_deref()?;
+    let query = url.split_once('?')?.1;
+    let query = query.split('#').next().unwrap_or(query);
+    let (key, value) = query
+        .split('&')
+        .filter_map(|pair| pair.split_once('='))
+        .find(|(key, value)| is_plausible_secret(key, value))?;
+    let (line, snippet) = locate(contents, value);
+    let transport = entry
+        .transport()
+        .map_or("remote", super::model::Transport::label);
+
+    Some(Finding {
+        rule_id: "BAS-MCP-009".to_string(),
+        title: "Credential in MCP server URL".to_string(),
+        kind: Kind::Defect,
+        severity: Severity::High,
+        confidence: Confidence::High,
+        categories: vec![Category::Zt1],
+        location: location(relative_path, line),
+        snippet,
+        description: format!(
+            "Server `{name}` ({transport}) has what looks like a live credential in the \
+             `{key}` query parameter of its `url`. It is committed to the repository and \
+             travels in every request line, where proxies and access logs record it."
+        ),
+        remediation: "Send the credential in an `Authorization` header read from the \
+             environment instead, and rotate the exposed value."
+            .to_string(),
+        secondary_rule_ids: Vec::new(),
+        references: Vec::new(),
+    })
+}
+
 /// True if `key` names something that suggests a secret AND `value` has the
 /// shape of a real one — both are required. This is the conservative
 /// combination that keeps a variable like `approx_tokens` (a plausible key
@@ -976,5 +1024,42 @@ mod tests {
         );
         assert_eq!(findings.len(), 1, "{findings:#?}");
         assert_eq!(findings[0].rule_id, "BAS-LLM03-020");
+    }
+
+    #[test]
+    fn check_009_flags_a_literal_secret_in_a_query_parameter() {
+        let json = r#"{"url": "https://m.example.com/mcp?api_key=sk-live-abc123def456ghi789jkl"}"#;
+        let entry = server(json);
+        let finding = check_secret_in_url("m", &entry, Path::new("mcp.json"), json).unwrap();
+        assert_eq!(finding.rule_id, "BAS-MCP-009");
+        assert_eq!(finding.kind, Kind::Defect);
+        assert!(
+            !finding.description.contains("sk-live"),
+            "must not echo the secret"
+        );
+        assert!(finding.description.contains("api_key"));
+    }
+
+    #[test]
+    fn check_009_walks_past_placeholders_and_ordinary_parameters() {
+        for url in [
+            "https://m.example.com/mcp?api_key=${METRICS_API_KEY}",
+            "https://m.example.com/mcp?token=YOUR_TOKEN",
+            "https://m.example.com/mcp?region=eu-west-1&page=2",
+            "https://m.example.com/mcp",
+        ] {
+            let entry = server(&format!(r#"{{"url": "{url}"}}"#));
+            assert!(
+                check_secret_in_url("m", &entry, Path::new("mcp.json"), "{}").is_none(),
+                "{url}"
+            );
+        }
+    }
+
+    #[test]
+    fn check_009_ignores_a_stdio_entry() {
+        // A stdio entry has no wire URL; an argument that looks like one is not this finding.
+        let entry = server(r#"{"command": "node", "args": ["s.js"], "env": {}}"#);
+        assert!(check_secret_in_url("m", &entry, Path::new("mcp.json"), "{}").is_none());
     }
 }
