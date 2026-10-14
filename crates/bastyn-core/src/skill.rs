@@ -1,4 +1,4 @@
-//! `SKILL.md` scanning: `BAS-SKILL-001` through `BAS-SKILL-004`.
+//! `SKILL.md` scanning: `BAS-SKILL-001` through `BAS-SKILL-005`.
 //!
 //! `SKILL.md` is the agent-skill manifest convention used by Claude Code,
 //! Cursor, and other agent hosts (`skills/<skill-name>/SKILL.md`, optionally
@@ -38,6 +38,10 @@
 //!   with its `loose` security level, which lets diagram text run scripts.
 //!   OWASP `GenAI`'s LLM10. Filed as an observation: the repository cannot
 //!   show whether the diagram text is trusted.
+//! - **`BAS-SKILL-005`** -- text telling the agent to ask the user to paste or
+//!   send a key, token or password into the conversation. OWASP `GenAI`'s
+//!   LLM02. Filed as an observation: the repository cannot show whether a
+//!   safer way to supply the credential is also offered.
 //!
 //! All of them are hand-written checks over the file's raw text rather than
 //! AST rule patterns -- there is no source grammar to match against -- which
@@ -70,6 +74,7 @@ const RULE_MISSING_FRONTMATTER: &str = "BAS-SKILL-001";
 const RULE_PROMPT_INJECTION: &str = "BAS-SKILL-002";
 const RULE_SKIP_CONFIRMATION: &str = "BAS-SKILL-003";
 const RULE_DIAGRAM_SECURITY_LEVEL: &str = "BAS-SKILL-004";
+const RULE_CREDENTIAL_PASTE: &str = "BAS-SKILL-005";
 
 /// The frontmatter fields the Agent Skills specification requires
 /// (<https://agentskills.io/specification>). `version` is not a spec field
@@ -141,6 +146,25 @@ const DIAGRAM_SECURITY_PHRASES: &[&str] = &[
     "securitylevel:'loose'",
 ];
 
+/// `BAS-SKILL-005` trigger text: asking the user to hand a credential to the
+/// agent in the conversation. Lowercase, matched against normalised text.
+const CREDENTIAL_PASTE_PHRASES: &[&str] = &[
+    "paste your api key",
+    "paste the api key",
+    "paste your key",
+    "paste the key",
+    "paste your token",
+    "paste the token",
+    "paste your secret",
+    "paste your password",
+    "send me your api key",
+    "send me your key",
+    "send me your token",
+    "send me your password",
+    "share your api key",
+    "share your password",
+];
+
 /// True if this path is a file this inspector should scan: any file named
 /// `SKILL.md`, case-insensitive, regardless of directory.
 #[must_use]
@@ -154,7 +178,7 @@ pub fn is_skill_file(path: &Path) -> bool {
 /// module does not claim yields nothing, so a caller that has not consulted
 /// [`is_skill_file`] still gets a correct answer.
 ///
-/// Each of the four checks below is independent, so one file can produce
+/// Each of the five checks below is independent, so one file can produce
 /// findings from more than one of them.
 #[must_use]
 pub fn inspect(relative_path: &Path, contents: &str) -> Vec<Finding> {
@@ -167,6 +191,7 @@ pub fn inspect(relative_path: &Path, contents: &str) -> Vec<Finding> {
     findings.extend(check_prompt_injection(relative_path, contents));
     findings.extend(check_skip_confirmation(relative_path, contents));
     findings.extend(check_diagram_security_level(relative_path, contents));
+    findings.extend(check_credential_paste(relative_path, contents));
     findings
 }
 
@@ -220,6 +245,7 @@ pub fn inspect_reference(relative_path: &Path, contents: &str) -> Vec<Finding> {
     findings.extend(check_prompt_injection(relative_path, contents));
     findings.extend(check_skip_confirmation(relative_path, contents));
     findings.extend(check_diagram_security_level(relative_path, contents));
+    findings.extend(check_credential_paste(relative_path, contents));
     findings
 }
 
@@ -1031,6 +1057,52 @@ fn check_diagram_security_level(relative_path: &Path, contents: &str) -> Option<
     })
 }
 
+/// `BAS-SKILL-005` -- text telling the agent to ask the user to paste or send
+/// a credential into the conversation, anywhere in the file's text.
+fn check_credential_paste(relative_path: &Path, contents: &str) -> Option<Finding> {
+    let PhraseMatch {
+        count,
+        line,
+        column,
+        phrase,
+    } = scan_phrases(contents, CREDENTIAL_PASTE_PHRASES, CueSet::Negation)?;
+
+    let snippet = contents
+        .lines()
+        .nth(line - 1)
+        .unwrap_or_default()
+        .trim()
+        .to_owned();
+
+    Some(Finding {
+        rule_id: RULE_CREDENTIAL_PASTE.to_owned(),
+        title: "Skill file asks the user to paste a credential into the conversation".to_owned(),
+        kind: Kind::Observation,
+        severity: Severity::High,
+        confidence: Confidence::Medium,
+        categories: vec![Category::Llm02],
+        location: Location {
+            file: relative_path.to_path_buf(),
+            line,
+            column,
+        },
+        snippet,
+        description: format!(
+            "This file tells the agent to ask the user to hand over a credential in the \
+             conversation, the first being \"{phrase}\" ({count} occurrence(s)). Anything \
+             pasted into the conversation is visible to the model and to its logs. The \
+             repository cannot show whether a safer flow is also offered, so a reviewer \
+             should confirm."
+        ),
+        remediation: "Prefer a flow where the user enters the credential outside the \
+                       conversation (an environment variable, a secret manager or a browser \
+                       sign-in) and the agent only reads it from there."
+            .to_owned(),
+        secondary_rule_ids: Vec::new(),
+        references: Vec::new(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1649,6 +1721,55 @@ mod tests {
     fn a_strict_diagram_security_level_is_not_reported() {
         let contents = format!("{FM}Use securityLevel: \"strict\".\n");
         assert_eq!(by_rule(&contents, "BAS-SKILL-004").len(), 0);
+    }
+
+    #[test]
+    fn asking_the_user_to_paste_a_credential_is_an_observation() {
+        for sentence in [
+            "As a fallback, ask them to paste the key back to you.",
+            "Ask the user to paste your API key into the chat.",
+            "Send me your token and I will store it.",
+            "Please share your password so I can log in.",
+        ] {
+            let contents = format!("{FM}{sentence}\n");
+            let found = by_rule(&contents, "BAS-SKILL-005");
+            assert_eq!(found.len(), 1, "{sentence}");
+            assert_eq!(found[0].kind, Kind::Observation, "{sentence}");
+            assert_eq!(found[0].severity, Severity::High, "{sentence}");
+            assert_eq!(found[0].confidence, Confidence::Medium, "{sentence}");
+            assert_eq!(found[0].categories, vec![Category::Llm02], "{sentence}");
+        }
+    }
+
+    #[test]
+    fn refusing_to_take_a_pasted_credential_is_not_reported() {
+        for sentence in [
+            "Never ask the user to paste the key into the chat.",
+            "Do not ask them to paste your API key; use the device flow.",
+            "Users must never send me your password.",
+        ] {
+            let contents = format!("{FM}{sentence}\n");
+            assert_eq!(by_rule(&contents, "BAS-SKILL-005").len(), 0, "{sentence}");
+        }
+    }
+
+    #[test]
+    fn pasting_something_else_is_not_reported() {
+        let contents = format!("{FM}Paste the error message into the chat.\n");
+        assert_eq!(by_rule(&contents, "BAS-SKILL-005").len(), 0);
+    }
+
+    #[test]
+    fn a_credential_paste_instruction_in_a_reference_file_is_reported() {
+        let found = inspect_reference(
+            Path::new("a/references/setup.md"),
+            "Ask them to paste the key back.\n",
+        );
+        let hit: Vec<_> = found
+            .iter()
+            .filter(|f| f.rule_id == "BAS-SKILL-005")
+            .collect();
+        assert_eq!(hit.len(), 1, "{found:#?}");
     }
 
     #[test]

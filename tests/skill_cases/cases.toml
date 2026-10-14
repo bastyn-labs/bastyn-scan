@@ -399,3 +399,23 @@ outcome_now = "clean"
 rules = []
 why = "Uses the strict level and tells the agent never to use the loose one."
 pair = "M17"
+
+[[case]]
+id = "M18"
+dir = "malicious/M18-credential-paste-fallback"
+label = "malicious"
+class = "credential-handling"
+outcome_now = "detected"
+rules = ["BAS-SKILL-005"]
+why = "Tells the agent to ask the user to paste the key back into the conversation as a fallback."
+pair = "B27"
+
+[[case]]
+id = "B27"
+dir = "benign/B27-credential-paste-refused"
+label = "benign"
+class = "credential-handling"
+outcome_now = "clean"
+rules = []
+why = "Tells the agent never to ask for the key in the conversation and to wait for it in the environment."
+pair = "M18"
