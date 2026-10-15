@@ -31,6 +31,11 @@ mod launch;
 pub(crate) mod model;
 mod snapshot_checks;
 
+#[allow(
+    unused_imports,
+    reason = "the remote-inspection orchestrator uses this in a later change"
+)]
+pub(crate) use snapshot_checks::check_snapshot_at;
 pub use snapshot_checks::{inspect_snapshot, is_tools_snapshot};
 
 use std::path::Path;
