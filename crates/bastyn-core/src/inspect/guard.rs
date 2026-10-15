@@ -170,10 +170,6 @@ fn is_public_ipv4(v4: Ipv4Addr) -> bool {
 /// `fc00::/7`, `fe80::/10`, `ff00::/8` and `2001:db8::/32`. An IPv4-mapped
 /// address (`::ffff:a.b.c.d`) and a NAT64 address (`64:ff9b::/96`) are judged
 /// as the IPv4 address they embed. Everything else is public.
-#[allow(
-    dead_code,
-    reason = "the remote-inspection entry point uses this in a later change"
-)]
 pub(crate) fn is_public_ip(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => is_public_ipv4(v4),
@@ -231,10 +227,6 @@ pub(crate) fn is_public_https_url(url: &str) -> bool {
 /// Check that `url` is an `https` URL to a public server: the syntactic rules
 /// of [`is_public_https_url`] plus resolution, where every address the host
 /// resolves to must be public.
-#[allow(
-    dead_code,
-    reason = "the remote-inspection entry point uses this in a later change"
-)]
 pub(crate) fn check_public_url(url: &str) -> Result<(), GuardError> {
     let Some((uri, bare)) = https_host(url) else {
         return Err(public_url_refusal(url));

@@ -19,7 +19,7 @@ pub(crate) mod sse;
 mod stdio;
 
 pub use error::InspectError;
-pub use http::{HttpTarget, capture_http};
+pub use http::{HttpTarget, capture_http, capture_http_public};
 pub use snapshot::{SNAPSHOT_SCHEMA, ServerInfo, Snapshot};
 pub use stdio::{StdioTarget, capture_stdio};
 

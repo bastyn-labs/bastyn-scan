@@ -12,9 +12,14 @@
 //! the legacy `initialize` handshake used.
 
 use std::io::Read;
+use std::net::SocketAddr;
 
 use serde_json::Value;
 use ureq::Agent;
+use ureq::config::Config;
+use ureq::http::Uri;
+use ureq::unversioned::resolver::{DefaultResolver, ResolvedSocketAddrs, Resolver};
+use ureq::unversioned::transport::{DefaultConnector, NextTimeout};
 
 use super::guard;
 use super::jsonrpc::{
@@ -63,22 +68,97 @@ enum Attempt {
 /// exceeds a limit in `limits`.
 pub fn capture_http(target: &HttpTarget, limits: &Limits) -> Result<Capture, InspectError> {
     guard::check_url(&target.url).map_err(|error| InspectError::Guard(error.to_string()))?;
-    let agent = build_agent(limits);
-    match modern_capture(&agent, target, limits)? {
+    capture_with_agent(&build_agent(limits), target, limits)
+}
+
+/// Lists the tools of the server at `target`, which must be an `https` server
+/// on a public address.
+///
+/// Behaves like [`capture_http`] except for the address rules: the URL is
+/// checked with [`guard::check_public_url`] first, and the connection itself
+/// is made through a resolver that refuses every non-public address, so a name
+/// that resolves differently at connect time is still never connected to.
+///
+/// # Errors
+///
+/// Returns an [`InspectError`] under the same conditions as [`capture_http`],
+/// and [`InspectError::Guard`] when the URL is not an `https` URL to a public
+/// address.
+pub fn capture_http_public(target: &HttpTarget, limits: &Limits) -> Result<Capture, InspectError> {
+    guard::check_public_url(&target.url).map_err(|error| InspectError::Guard(error.to_string()))?;
+    capture_with_agent(&build_public_agent(limits), target, limits)
+}
+
+/// The protocol flow shared by both entry points: modern first, then legacy.
+fn capture_with_agent(
+    agent: &Agent,
+    target: &HttpTarget,
+    limits: &Limits,
+) -> Result<Capture, InspectError> {
+    match modern_capture(agent, target, limits)? {
         Attempt::Done(capture) => Ok(capture),
-        Attempt::TryLegacy => legacy_capture(&agent, target, limits),
+        Attempt::TryLegacy => legacy_capture(agent, target, limits),
     }
 }
 
-fn build_agent(limits: &Limits) -> Agent {
+fn agent_config(limits: &Limits) -> ureq::config::ConfigBuilder<ureq::typestate::AgentScope> {
     Agent::config_builder()
         .max_redirects(0)
         .http_status_as_error(false)
         .timeout_connect(Some(limits.connect))
         .timeout_global(Some(limits.total))
         .user_agent(concat!("bastyn/", env!("CARGO_PKG_VERSION")))
-        .build()
-        .into()
+}
+
+fn build_agent(limits: &Limits) -> Agent {
+    agent_config(limits).build().into()
+}
+
+/// An agent whose every name lookup goes through [`PublicOnlyResolver`].
+///
+/// A proxy is switched off: a proxy would be the host that gets resolved and
+/// connected to, and the target address would escape the check.
+///
+/// `Agent::with_parts` and the `Resolver` trait live in ureq's `unversioned`
+/// API, which is not covered by its semver promise: a ureq upgrade must re-run
+/// the tests of this module.
+fn build_public_agent(limits: &Limits) -> Agent {
+    let config: Config = agent_config(limits).proxy(None).build();
+    Agent::with_parts(config, DefaultConnector::default(), PublicOnlyResolver)
+}
+
+/// Resolves names like the default resolver, then refuses the whole answer if
+/// any address in it is not public.
+#[derive(Debug)]
+struct PublicOnlyResolver;
+
+impl Resolver for PublicOnlyResolver {
+    fn resolve(
+        &self,
+        uri: &Uri,
+        config: &Config,
+        timeout: NextTimeout,
+    ) -> Result<ResolvedSocketAddrs, ureq::Error> {
+        let addrs = DefaultResolver::default().resolve(uri, config, timeout)?;
+        ensure_all_public(&addrs).map_err(|message| {
+            ureq::Error::Io(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                message,
+            ))
+        })?;
+        Ok(addrs)
+    }
+}
+
+/// Ok only when `addrs` is non-empty and every address is public.
+fn ensure_all_public(addrs: &[SocketAddr]) -> Result<(), String> {
+    if addrs.is_empty() {
+        return Err("the host resolved to no address".to_owned());
+    }
+    match addrs.iter().find(|addr| !guard::is_public_ip(addr.ip())) {
+        Some(addr) => Err(format!("{} is not a public address", addr.ip())),
+        None => Ok(()),
+    }
 }
 
 fn map_error(error: ureq::Error) -> InspectError {
@@ -780,6 +860,66 @@ mod tests {
             "{result:?}"
         );
         assert_eq!(log.lock().unwrap()[2].method, "GET");
+    }
+
+    #[test]
+    fn ensure_all_public_rejects_any_private_address() {
+        let public: SocketAddr = "8.8.8.8:443".parse().unwrap();
+        let private: SocketAddr = "10.0.0.1:443".parse().unwrap();
+        assert!(ensure_all_public(&[public]).is_ok());
+        assert!(ensure_all_public(&[public, private]).is_err());
+        assert!(ensure_all_public(&[]).is_err());
+    }
+
+    #[test]
+    fn the_public_path_never_connects_to_a_loopback_server() {
+        let (url, seen) = serve(vec![json_reply(
+            r#"{"jsonrpc":"2.0","id":1,"result":{"tools":[]}}"#,
+        )]);
+        let error = capture_http_public(&target(url), &Limits::default()).unwrap_err();
+        assert!(matches!(error, InspectError::Guard(_)), "{error:?}");
+        assert!(
+            seen.lock().unwrap().is_empty(),
+            "the server must see no request"
+        );
+    }
+
+    #[test]
+    fn the_public_path_refuses_plain_http() {
+        let error = capture_http_public(
+            &target("http://example.com/mcp".to_owned()),
+            &Limits::default(),
+        )
+        .unwrap_err();
+        assert!(matches!(error, InspectError::Guard(_)));
+    }
+
+    #[test]
+    fn the_public_path_refuses_a_decimal_encoded_loopback_host() {
+        let error = capture_http_public(
+            &target("https://2130706433/mcp".to_owned()),
+            &Limits::default(),
+        )
+        .unwrap_err();
+        assert!(matches!(error, InspectError::Guard(_)), "{error:?}");
+    }
+
+    #[test]
+    fn the_pinned_resolver_refuses_a_loopback_name_at_connect_time() {
+        // Bypasses `check_public_url` to prove the resolver alone refuses.
+        let (url, seen) = serve(vec![json_reply(
+            r#"{"jsonrpc":"2.0","id":1,"result":{"tools":[]}}"#,
+        )]);
+        let agent = build_public_agent(&Limits::default());
+        let error = capture_with_agent(&agent, &target(url), &Limits::default()).unwrap_err();
+        assert!(
+            matches!(&error, InspectError::Network(text) if text.contains("not a public address")),
+            "{error:?}"
+        );
+        assert!(
+            seen.lock().unwrap().is_empty(),
+            "the server must see no request"
+        );
     }
 
     #[test]
