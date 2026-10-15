@@ -82,11 +82,18 @@ pub fn capture_http(target: &HttpTarget, limits: &Limits) -> Result<Capture, Ins
 /// # Errors
 ///
 /// Returns an [`InspectError`] under the same conditions as [`capture_http`],
-/// and [`InspectError::Guard`] when the URL is not an `https` URL to a public
-/// address.
+/// and [`InspectError::Guard`] when the target carries request headers (they
+/// come from a repository and are never sent in this mode), when the URL is
+/// not an `https` URL to a public address, or when the host resolves to a
+/// non-public address at connect time.
 pub fn capture_http_public(target: &HttpTarget, limits: &Limits) -> Result<Capture, InspectError> {
+    if !target.headers.is_empty() {
+        return Err(InspectError::Guard(
+            "headers are not sent to servers inspected from a scan".to_owned(),
+        ));
+    }
     guard::check_public_url(&target.url).map_err(|error| InspectError::Guard(error.to_string()))?;
-    capture_with_agent(&build_public_agent(limits), target, limits)
+    capture_with_agent(&build_public_agent(limits), target, limits).map_err(map_public_error)
 }
 
 /// The protocol flow shared by both entry points: modern first, then legacy.
@@ -150,13 +157,27 @@ impl Resolver for PublicOnlyResolver {
     }
 }
 
+/// Text carried by every refusal of a non-public address.
+const NOT_PUBLIC_MARKER: &str = "not a public address";
+
+/// Reports a connect-time refusal by the pinned resolver as a guard refusal.
+/// Every other error is returned unchanged.
+fn map_public_error(error: InspectError) -> InspectError {
+    match error {
+        InspectError::Network(text) if text.contains(NOT_PUBLIC_MARKER) => {
+            InspectError::Guard(text)
+        }
+        other => other,
+    }
+}
+
 /// Ok only when `addrs` is non-empty and every address is public.
 fn ensure_all_public(addrs: &[SocketAddr]) -> Result<(), String> {
     if addrs.is_empty() {
         return Err("the host resolved to no address".to_owned());
     }
     match addrs.iter().find(|addr| !guard::is_public_ip(addr.ip())) {
-        Some(addr) => Err(format!("{} is not a public address", addr.ip())),
+        Some(addr) => Err(format!("{} is {NOT_PUBLIC_MARKER}", addr.ip())),
         None => Ok(()),
     }
 }
@@ -876,6 +897,7 @@ mod tests {
         let (url, seen) = serve(vec![json_reply(
             r#"{"jsonrpc":"2.0","id":1,"result":{"tools":[]}}"#,
         )]);
+        let url = url.replacen("http://", "https://", 1);
         let error = capture_http_public(&target(url), &Limits::default()).unwrap_err();
         assert!(matches!(error, InspectError::Guard(_)), "{error:?}");
         assert!(
@@ -901,11 +923,66 @@ mod tests {
             &Limits::default(),
         )
         .unwrap_err();
-        assert!(matches!(error, InspectError::Guard(_)), "{error:?}");
+        assert!(
+            matches!(&error, InspectError::Guard(text)
+                if text.contains(NOT_PUBLIC_MARKER) || text.contains("could not resolve")),
+            "{error:?}"
+        );
     }
 
     #[test]
-    fn the_pinned_resolver_refuses_a_loopback_name_at_connect_time() {
+    fn a_target_with_headers_is_refused_before_any_lookup() {
+        let target = HttpTarget {
+            url: "https://example.com/mcp".to_owned(),
+            headers: vec![("Authorization".into(), "Bearer t".into())],
+        };
+        let error = capture_http_public(&target, &Limits::default()).unwrap_err();
+        assert!(
+            matches!(&error, InspectError::Guard(text) if text.contains("headers are not sent")),
+            "{error:?}"
+        );
+    }
+
+    #[test]
+    fn map_public_error_turns_only_the_marker_into_a_guard_error() {
+        assert!(matches!(
+            map_public_error(InspectError::Network(format!(
+                "io: 10.0.0.1 is {NOT_PUBLIC_MARKER}"
+            ))),
+            InspectError::Guard(_)
+        ));
+        assert!(matches!(
+            map_public_error(InspectError::Network("connection refused".to_owned())),
+            InspectError::Network(_)
+        ));
+        assert!(matches!(
+            map_public_error(InspectError::TooLarge),
+            InspectError::TooLarge
+        ));
+    }
+
+    #[test]
+    fn the_pinned_resolver_refuses_a_hostname_that_resolves_to_loopback() {
+        // Bypasses `check_public_url` to prove the resolver alone refuses.
+        let (url, seen) = serve(vec![json_reply(
+            r#"{"jsonrpc":"2.0","id":1,"result":{"tools":[]}}"#,
+        )]);
+        let url = url.replacen("127.0.0.1", "localhost", 1);
+        assert!(url.contains("localhost"), "{url}");
+        let agent = build_public_agent(&Limits::default());
+        let error = capture_with_agent(&agent, &target(url), &Limits::default()).unwrap_err();
+        assert!(
+            matches!(&error, InspectError::Network(text) if text.contains(NOT_PUBLIC_MARKER)),
+            "{error:?}"
+        );
+        assert!(
+            seen.lock().unwrap().is_empty(),
+            "the server must see no request"
+        );
+    }
+
+    #[test]
+    fn the_pinned_resolver_refuses_an_ip_literal_at_connect_time() {
         // Bypasses `check_public_url` to prove the resolver alone refuses.
         let (url, seen) = serve(vec![json_reply(
             r#"{"jsonrpc":"2.0","id":1,"result":{"tools":[]}}"#,
@@ -913,7 +990,7 @@ mod tests {
         let agent = build_public_agent(&Limits::default());
         let error = capture_with_agent(&agent, &target(url), &Limits::default()).unwrap_err();
         assert!(
-            matches!(&error, InspectError::Network(text) if text.contains("not a public address")),
+            matches!(&error, InspectError::Network(text) if text.contains(NOT_PUBLIC_MARKER)),
             "{error:?}"
         );
         assert!(
