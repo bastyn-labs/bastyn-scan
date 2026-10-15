@@ -142,8 +142,8 @@ pub(crate) enum Command {
     /// Connect to an MCP server and write its tool list to a snapshot file.
     ///
     /// This is the one command that connects to a server you name, or starts
-    /// a command from a config file, and only when you run it. `scan` makes
-    /// no connection to MCP servers.
+    /// a command from a config file, and only when you run it. `scan` connects
+    /// to MCP servers only with `--inspect-remote`.
     InspectServer(InspectServerArgs),
 }
 
