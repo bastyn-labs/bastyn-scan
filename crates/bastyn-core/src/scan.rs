@@ -84,9 +84,12 @@ fn inspect_remote_servers(
             }
         }
     }
-    let outcome = remote::inspect_configs(&configs, options.offline, &|url| {
-        remote::capture_snapshot(url, &Limits::default())
-    });
+    let outcome = remote::inspect_configs(
+        &configs,
+        options.offline,
+        options.save_snapshots.is_some(),
+        &|url| remote::capture_snapshot(url, &Limits::default()),
+    );
     for finding in outcome.findings {
         observer.found(&finding);
         analysis.findings.push(finding);

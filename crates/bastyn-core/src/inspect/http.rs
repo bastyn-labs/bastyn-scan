@@ -75,9 +75,11 @@ pub fn capture_http(target: &HttpTarget, limits: &Limits) -> Result<Capture, Ins
 /// on a public address.
 ///
 /// Behaves like [`capture_http`] except for the address rules: the URL is
-/// checked with [`guard::check_public_url`] first, and the connection itself
-/// is made through a resolver that refuses every non-public address, so a name
-/// that resolves differently at connect time is still never connected to.
+/// checked syntactically with [`guard::check_public_https_url`] first, and the
+/// connection itself is made through a resolver that refuses every non-public
+/// address. The name is looked up only at connect time, under the connect
+/// timeout, so a name that does not resolve is a network error and a name that
+/// resolves to a non-public address is a guard error.
 ///
 /// # Errors
 ///
@@ -92,7 +94,13 @@ pub fn capture_http_public(target: &HttpTarget, limits: &Limits) -> Result<Captu
             "headers are not sent to servers inspected from a scan".to_owned(),
         ));
     }
-    guard::check_public_url(&target.url).map_err(|error| InspectError::Guard(error.to_string()))?;
+    if guard::url_has_userinfo(&target.url) {
+        return Err(InspectError::Guard(
+            "credentials in the URL are not sent to servers inspected from a scan".to_owned(),
+        ));
+    }
+    guard::check_public_https_url(&target.url)
+        .map_err(|error| InspectError::Guard(error.to_string()))?;
     capture_with_agent(&build_public_agent(limits), target, limits).map_err(map_public_error)
 }
 
@@ -931,6 +939,17 @@ mod tests {
     }
 
     #[test]
+    fn a_name_that_does_not_resolve_is_a_network_error_not_a_guard_error() {
+        // The `.invalid` TLD is reserved and never resolves.
+        let error = capture_http_public(
+            &target("https://nonexistent-host.invalid/mcp".to_owned()),
+            &Limits::default(),
+        )
+        .unwrap_err();
+        assert!(matches!(error, InspectError::Network(_)), "{error:?}");
+    }
+
+    #[test]
     fn a_target_with_headers_is_refused_before_any_lookup() {
         let target = HttpTarget {
             url: "https://example.com/mcp".to_owned(),
@@ -941,6 +960,22 @@ mod tests {
             matches!(&error, InspectError::Guard(text) if text.contains("headers are not sent")),
             "{error:?}"
         );
+    }
+
+    #[test]
+    fn a_target_with_userinfo_in_the_url_is_refused_before_any_lookup() {
+        for url in [
+            "https://alice:secret@example.com/mcp",
+            "https://alice@example.com/mcp",
+        ] {
+            let error =
+                capture_http_public(&target(url.to_owned()), &Limits::default()).unwrap_err();
+            assert!(
+                matches!(&error, InspectError::Guard(text)
+                    if text.contains("credentials in the URL are not sent")),
+                "{url}: {error:?}"
+            );
+        }
     }
 
     #[test]
@@ -963,7 +998,7 @@ mod tests {
 
     #[test]
     fn the_pinned_resolver_refuses_a_hostname_that_resolves_to_loopback() {
-        // Bypasses `check_public_url` to prove the resolver alone refuses.
+        // Bypasses `check_public_https_url` to prove the resolver alone refuses.
         let (url, seen) = serve(vec![json_reply(
             r#"{"jsonrpc":"2.0","id":1,"result":{"tools":[]}}"#,
         )]);
@@ -983,7 +1018,7 @@ mod tests {
 
     #[test]
     fn the_pinned_resolver_refuses_an_ip_literal_at_connect_time() {
-        // Bypasses `check_public_url` to prove the resolver alone refuses.
+        // Bypasses `check_public_https_url` to prove the resolver alone refuses.
         let (url, seen) = serve(vec![json_reply(
             r#"{"jsonrpc":"2.0","id":1,"result":{"tools":[]}}"#,
         )]);

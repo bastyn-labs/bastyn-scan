@@ -167,9 +167,12 @@ fn is_public_ipv4(v4: Ipv4Addr) -> bool {
 /// including broadcast), plus everything [`is_blocked_ip`] blocks.
 ///
 /// Rejected IPv6 ranges: `::` and `::1`, `::/96` (IPv4-compatible),
-/// `fc00::/7`, `fe80::/10`, `ff00::/8` and `2001:db8::/32`. An IPv4-mapped
-/// address (`::ffff:a.b.c.d`) and a NAT64 address (`64:ff9b::/96`) are judged
-/// as the IPv4 address they embed. Everything else is public.
+/// `fc00::/7`, `fe80::/10`, `ff00::/8`, `2001:db8::/32`, `64:ff9b:1::/48`
+/// (local-use NAT64), `100::/64` (discard), `2001:2::/48` (benchmarking) and
+/// `3fff::/20` (documentation). An IPv4-mapped address (`::ffff:a.b.c.d`), a
+/// NAT64 address (`64:ff9b::/96`) and a 6to4 address (`2002::/16`, which
+/// embeds its IPv4 address in bits 16..48) are judged as the IPv4 address they
+/// embed. Everything else is public.
 pub(crate) fn is_public_ip(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => is_public_ipv4(v4),
@@ -183,7 +186,16 @@ pub(crate) fn is_public_ip(ip: IpAddr) -> bool {
                 let [.., c, d, e, f] = bits.to_be_bytes();
                 return is_public_ipv4(Ipv4Addr::new(c, d, e, f));
             }
+            if (bits >> 112) == 0x2002 {
+                // 6to4: bits 16..48 carry the IPv4 address.
+                let [_, _, a, b, c, d, ..] = bits.to_be_bytes();
+                return is_public_ipv4(Ipv4Addr::new(a, b, c, d));
+            }
             let reserved = (bits >> 32) == 0 // ::/96, includes :: and ::1
+                || (bits >> 80) == 0x0064_ff9b_0001 // 64:ff9b:1::/48
+                || (bits >> 64) == 0x0100_0000_0000_0000 // 100::/64
+                || (bits >> 80) == 0x2001_0002_0000 // 2001:2::/48
+                || (bits >> 108) == 0x3fff0 // 3fff::/20
                 || (bits >> 121) == 0x7e // fc00::/7
                 || (bits >> 118) == 0x3fa // fe80::/10
                 || (bits >> 120) == 0xff // ff00::/8
@@ -220,22 +232,20 @@ pub(crate) fn is_public_https_url(url: &str) -> bool {
     https_host(url).is_some_and(|(_, bare)| bare.parse::<IpAddr>().map_or(true, is_public_ip))
 }
 
-/// Check that `url` is an `https` URL to a public server: the syntactic rules
-/// of [`is_public_https_url`] plus resolution, where every address the host
-/// resolves to must be public.
-pub(crate) fn check_public_url(url: &str) -> Result<(), GuardError> {
-    let Some((uri, bare)) = https_host(url) else {
+/// Check that `url` is an `https` URL to a public server, by the syntactic
+/// rules of [`is_public_https_url`], returning the specific reason when it is
+/// not. No name is resolved: a hostname is checked when the connection is made.
+pub(crate) fn check_public_https_url(url: &str) -> Result<(), GuardError> {
+    let Some((_, bare)) = https_host(url) else {
         return Err(public_url_refusal(url));
     };
-    for address in resolve_addresses(&uri, &bare)? {
-        if !is_public_ip(address) {
-            return Err(GuardError::NotPublic {
-                host: bare,
-                address,
-            });
-        }
+    match bare.parse::<IpAddr>() {
+        Ok(address) if !is_public_ip(address) => Err(GuardError::NotPublic {
+            host: bare,
+            address,
+        }),
+        _ => Ok(()),
     }
-    Ok(())
 }
 
 /// The error for a URL that [`https_host`] rejected: a missing host, a
@@ -245,7 +255,8 @@ fn public_url_refusal(url: &str) -> GuardError {
         Ok(uri) if uri.scheme_str() == Some("https") => match uri.host() {
             Some(host) => GuardError::NotPublic {
                 host: host.to_owned(),
-                address: IpAddr::V6(Ipv6Addr::LOCALHOST),
+                // `localhost` and `*.localhost` always mean loopback by convention.
+                address: IpAddr::V4(Ipv4Addr::LOCALHOST),
             },
             None => GuardError::NoHost,
         },
@@ -255,6 +266,23 @@ fn public_url_refusal(url: &str) -> GuardError {
             _ => GuardError::NotHttps(url.to_owned()),
         },
     }
+}
+
+/// True when the URL's authority carries a user name or password
+/// (`https://user:pass@host/`). The HTTP client would turn it into an
+/// `Authorization` header, so a URL from a repository must never be sent with
+/// one. A URL the parser rejects is judged on the text between `://` and the
+/// first `/`, `?` or `#`.
+pub(crate) fn url_has_userinfo(url: &str) -> bool {
+    if let Ok(uri) = url.parse::<Uri>() {
+        return uri
+            .authority()
+            .is_some_and(|authority| authority.as_str().contains('@'));
+    }
+    url.split_once("://").is_some_and(|(_, rest)| {
+        let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+        rest[..end].contains('@')
+    })
 }
 
 /// True when the URL's host is `localhost` or a loopback literal.
@@ -356,6 +384,7 @@ mod tests {
             "2606:4700:4700::1111",
             "64:ff9b::808:808",
             "::ffff:8.8.8.8",
+            "2002:0808:0808::1",
         ];
         let private = [
             "0.0.0.1",
@@ -387,6 +416,12 @@ mod tests {
             "::ffff:10.0.0.1",
             "::ffff:127.0.0.1",
             "64:ff9b::a00:1",
+            "64:ff9b:1::a00:1",
+            "100::1",
+            "2001:2::1",
+            "3fff::1",
+            "2002:0a00:0001::1",
+            "2002:7f00:0001::1",
         ];
         for ip in public {
             assert!(is_public_ip(ip.parse().unwrap()), "{ip}");
@@ -424,16 +459,41 @@ mod tests {
     }
 
     #[test]
-    fn check_public_url_refuses_localhost_by_resolution_without_network() {
-        // `localhost` resolves locally to a loopback address; no network is needed.
+    fn check_public_https_url_is_syntactic_and_names_the_reason() {
         assert!(matches!(
-            check_public_url("https://localhost/mcp"),
-            Err(GuardError::NotPublic { .. } | GuardError::NotHttps(_))
+            check_public_https_url("https://localhost/mcp"),
+            Err(GuardError::NotPublic { address, .. }) if address == IpAddr::V4(Ipv4Addr::LOCALHOST)
         ));
         assert!(matches!(
-            check_public_url("http://example.com"),
+            check_public_https_url("http://example.com"),
             Err(GuardError::NotHttps(_))
         ));
+        assert!(matches!(
+            check_public_https_url("https://"),
+            Err(GuardError::NoHost)
+        ));
+        assert!(matches!(
+            check_public_https_url("https://10.0.0.1/"),
+            Err(GuardError::NotPublic { .. })
+        ));
+        assert!(check_public_https_url("https://example.com/mcp").is_ok());
+    }
+
+    #[test]
+    fn userinfo_in_a_url_is_detected() {
+        for yes in [
+            "https://alice:secret@example.com/mcp",
+            "https://alice@example.com/mcp",
+        ] {
+            assert!(url_has_userinfo(yes), "{yes}");
+        }
+        for no in [
+            "https://example.com/mcp?x=a@b",
+            "https://example.com/@x",
+            "https://example.com/mcp",
+        ] {
+            assert!(!url_has_userinfo(no), "{no}");
+        }
     }
 
     #[test]
