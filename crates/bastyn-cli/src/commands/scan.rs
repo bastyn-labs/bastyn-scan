@@ -120,6 +120,7 @@ pub(crate) fn run(args: &ScanArgs, global: &GlobalArgs) -> anyhow::Result<Outcom
                     dependencies: watched.dependencies.get(),
                     result: outcome.result(),
                     exit_code: outcome.exit_code(),
+                    show_coverage: args.show_coverage,
                 },
             );
             (rendered.text, Some(rendered.summary))

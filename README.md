@@ -128,6 +128,11 @@ Confidence: high | Category: ZT1
   (os.environ["OPENAI_API_KEY"]) and rotate the key that leaked into history.
 
 
+Files read
+----------
+0 skill files, 0 skill references, 0 MCP configs, 0 instruction files read.
+
+
 Coverage gaps
 -------------
 Every file the scan reached was analysed.
@@ -193,6 +198,7 @@ Test code is held to the same rules and reported differently. A password invente
 | `[PATH]` | Directory to scan (default: `.`) |
 | `--fail-on <LEVEL>` | Minimum severity that exits non-zero: `none`, `low`, `medium`, `high` (default), `critical` |
 | `--show-observations` | Show context-dependent observations too |
+| `--show-coverage` | List every file the scan read, grouped by kind, in the text report |
 | `--offline` | Skip the CVE lookup and do not send the anonymous scan summary |
 | `--no-reporting` | Do not send the anonymous scan summary. See [Reporting](#reporting) |
 | `-f`, `--format <FORMAT>` | `text` (default), `json`, or `sarif` |

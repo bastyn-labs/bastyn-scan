@@ -241,6 +241,14 @@ pub(crate) struct ScanArgs {
     #[arg(long)]
     pub(crate) show_observations: bool,
 
+    /// List every file the scan read, grouped by kind.
+    ///
+    /// Without this flag the text report prints only a one-line count of each
+    /// kind. This affects `--format text` only: JSON and SARIF output,
+    /// findings, counts and exit codes are the same either way.
+    #[arg(long)]
+    pub(crate) show_coverage: bool,
+
     /// Skip the CVE lookup, and do not send the anonymous scan summary.
     #[arg(long)]
     pub(crate) offline: bool,

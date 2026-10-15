@@ -246,6 +246,9 @@ pub struct StdoutOptions {
     pub result: ScanResult,
     /// The exit code this run will finish with.
     pub exit_code: u8,
+    /// Whether to list the path of every file the scan read, grouped by kind.
+    /// False prints only the one-line count of each kind.
+    pub show_coverage: bool,
 }
 
 /// A rendered terminal report, and the one line `--quiet` prints.

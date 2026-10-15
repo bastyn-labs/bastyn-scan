@@ -20,6 +20,11 @@
 //! collected the report says how many are being withheld and which flag shows
 //! them; it never says "no observations" while the summary counts three.
 //!
+//! A "Files read" section precedes the coverage gaps and says how many skill
+//! files, skill reference files, MCP configs and instruction files the scan
+//! read, so a clean result is never mistaken for a scan that ignored them;
+//! `--show-coverage` adds the path of every one.
+//!
 //! Coverage gaps are always printed, even when nothing was skipped and even
 //! when no CVE lookup ran: a reader must never read "no CVEs listed" as "no
 //! CVEs exist". The compliance crosswalk and the summary close it out.
@@ -81,6 +86,7 @@ pub(crate) fn render(report: &Report, options: StdoutOptions) -> TerminalReport 
     render_verdict(&mut out, report, &defects, &observations, options);
     render_defects(&mut out, &defects, options);
     render_observations(&mut out, &observations, options);
+    render_files_read(&mut out, report, options);
     render_coverage(&mut out, report, options);
     render_crosswalks(&mut out, report, options);
 
@@ -589,6 +595,57 @@ fn render_observations(out: &mut String, observations: &[&Finding], options: Std
         write_wrapped(out, &finding.title, "", Some(ansi::DIM), options);
         write_attribution(out, finding, options);
         out.push('\n');
+    }
+    out.push('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Files read
+// ---------------------------------------------------------------------------
+
+/// How many files of each kind the scan read, and with `show_coverage` which.
+///
+/// Always printed, so a clean result on a skills repository is distinguishable
+/// from a scan that never looked at skills. The listing is uncapped and each
+/// path is printed whole, however long: a path cut short names no file.
+fn render_files_read(out: &mut String, report: &Report, options: StdoutOptions) {
+    let coverage = &report.coverage;
+    heading(out, "Files read", options);
+
+    let sentence = format!(
+        "{}, {}, {}, {} read.",
+        plural(coverage.skill_files.len(), "skill file", "skill files"),
+        plural(
+            coverage.skill_reference_files.len(),
+            "skill reference",
+            "skill references"
+        ),
+        plural(coverage.mcp_manifests.len(), "MCP config", "MCP configs"),
+        plural(
+            coverage.instruction_files.len(),
+            "instruction file",
+            "instruction files"
+        ),
+    );
+    write_wrapped(out, &sentence, "", None, options);
+
+    if options.show_coverage {
+        let kinds: [(&str, &[String]); 5] = [
+            ("Skill files", &coverage.skill_files),
+            ("Skill reference files", &coverage.skill_reference_files),
+            ("MCP configs", &coverage.mcp_manifests),
+            ("Instruction files", &coverage.instruction_files),
+            ("Skill files no analyser reads", &coverage.skill_unanalysed),
+        ];
+        for (label, paths) in kinds {
+            if paths.is_empty() {
+                continue;
+            }
+            let _ = writeln!(out, "\n{label}:");
+            for path in paths {
+                let _ = writeln!(out, "{PROSE}{path}");
+            }
+        }
     }
     out.push('\n');
 }
@@ -1346,6 +1403,7 @@ mod tests {
             dependencies: 14,
             result: ScanResult::Failed,
             exit_code: 1,
+            show_coverage: false,
         }
     }
 
@@ -1961,6 +2019,115 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("CVEs were not checked"), "{text}");
+    }
+
+    // -----------------------------------------------------------------
+    // Files read
+    // -----------------------------------------------------------------
+
+    /// A report that read two skill files and one MCP config.
+    fn report_that_read_files() -> Report {
+        let mut report = empty_report();
+        report.coverage.skill_files = vec![
+            "skills/a/SKILL.md".to_string(),
+            "skills/b/SKILL.md".to_string(),
+        ];
+        report.coverage.mcp_manifests = vec![".mcp.json".to_string()];
+        report
+    }
+
+    fn listing(report: &Report, color: bool, glyphs: Glyphs) -> String {
+        render(
+            report,
+            StdoutOptions {
+                show_coverage: true,
+                glyphs,
+                ..options(color)
+            },
+        )
+        .text
+    }
+
+    #[test]
+    fn the_default_report_counts_files_read_and_lists_none() {
+        let text = summarised(&report_that_read_files(), false);
+        assert!(text.contains("Files read\n"), "{text}");
+        assert!(
+            unwrapped(&text).contains(
+                "2 skill files, 0 skill references, 1 MCP config, 0 instruction files read."
+            ),
+            "{text}"
+        );
+        assert!(!text.contains("skills/a/SKILL.md"), "{text}");
+        assert!(!text.contains(".mcp.json"), "{text}");
+    }
+
+    #[test]
+    fn show_coverage_lists_every_path_in_order_under_its_label() {
+        let mut report = report_that_read_files();
+        report.coverage.skill_unanalysed = vec!["skills/a/run.sh".to_string()];
+        let text = listing(&report, false, Glyphs::Unicode);
+
+        let skills = position(
+            &text,
+            "Skill files:\n  skills/a/SKILL.md\n  skills/b/SKILL.md\n",
+        );
+        let mcp = position(&text, "MCP configs:\n  .mcp.json\n");
+        let unread = position(&text, "Skill files no analyser reads:\n  skills/a/run.sh\n");
+        assert!(skills < mcp && mcp < unread, "{text}");
+        assert!(!text.contains("Skill reference files:"), "{text}");
+        assert!(!text.contains("Instruction files:"), "{text}");
+    }
+
+    #[test]
+    fn a_single_file_of_a_kind_is_counted_in_the_singular() {
+        let mut report = empty_report();
+        report.coverage.skill_files = vec!["SKILL.md".to_string()];
+        report.coverage.skill_reference_files = vec!["references/a.md".to_string()];
+        report.coverage.mcp_manifests = vec![".mcp.json".to_string()];
+        report.coverage.instruction_files = vec!["AGENTS.md".to_string()];
+        let text = unwrapped(&summarised(&report, false));
+        assert!(
+            text.contains(
+                "1 skill file, 1 skill reference, 1 MCP config, 1 instruction file read."
+            ),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn files_read_comes_before_the_coverage_gaps() {
+        let text = summarised(&report_that_read_files(), false);
+        assert!(position(&text, "Files read") < position(&text, "Coverage gaps"));
+    }
+
+    #[test]
+    fn the_files_read_section_leaves_no_escape_or_unicode_behind() {
+        let report = report_that_read_files();
+        let plain = listing(&report, false, Glyphs::Unicode);
+        assert!(!plain.contains('\u{1b}'), "{plain}");
+        let ascii = listing(&report, false, Glyphs::Ascii);
+        assert!(ascii.is_ascii(), "{ascii}");
+    }
+
+    #[test]
+    fn the_files_read_count_line_stays_inside_the_wrap_width() {
+        let mut report = empty_report();
+        let many = |n: usize| vec!["f".to_string(); n];
+        report.coverage.skill_files = many(123_456);
+        report.coverage.skill_reference_files = many(234_567);
+        report.coverage.mcp_manifests = many(345_678);
+        report.coverage.instruction_files = many(456_789);
+        let text = summarised(&report, false);
+        let start = position(&text, "Files read");
+        let end = position(&text, "Coverage gaps");
+        for line in text[start..end].lines() {
+            assert!(line.chars().count() <= 78, "{line:?}");
+        }
+        assert!(
+            unwrapped(&text).contains("123456 skill files, 234567 skill references"),
+            "{text}"
+        );
     }
 
     // -----------------------------------------------------------------

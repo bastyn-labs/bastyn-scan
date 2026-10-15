@@ -1567,3 +1567,43 @@ fn help_and_version_are_available() {
         .success()
         .stdout(predicate::str::contains(env!("CARGO_PKG_VERSION")));
 }
+
+#[test]
+fn show_coverage_lists_the_files_read_in_text_and_changes_nothing_else() {
+    let dir = tree(&[("skills/demo/SKILL.md", SKILL_MANIFEST)]);
+    let path = "skills/demo/SKILL.md";
+
+    let default_text = stdout_of({
+        let mut c = bastyn(dir.path());
+        c.args(["scan", "--offline"]);
+        c
+    });
+    assert!(default_text.contains("1 skill file"), "{default_text}");
+    assert!(!default_text.contains(path), "{default_text}");
+
+    let listed_text = stdout_of({
+        let mut c = bastyn(dir.path());
+        c.args(["scan", "--offline", "--show-coverage"]);
+        c
+    });
+    assert!(listed_text.contains("1 skill file"), "{listed_text}");
+    assert!(listed_text.contains(path), "{listed_text}");
+
+    let status = |extra: &[&str]| {
+        let mut c = bastyn(dir.path());
+        c.args(["scan", "--offline", "--format", "json"]);
+        c.args(extra);
+        c.output().unwrap().status.code()
+    };
+    assert_eq!(status(&[]), status(&["--show-coverage"]));
+
+    let with_flag = json_scan(dir.path(), &["--show-coverage"]);
+    assert_eq!(
+        with_flag["coverage"]["skill_files"],
+        serde_json::json!([path])
+    );
+    assert_eq!(
+        with_flag["coverage"],
+        json_scan(dir.path(), &[])["coverage"]
+    );
+}

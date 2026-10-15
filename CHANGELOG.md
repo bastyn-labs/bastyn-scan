@@ -10,6 +10,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **New checks `BAS-MCP-010` to `BAS-MCP-012` run on tools snapshot files (`*.bastyn-tools.json`)**: hidden Unicode in tool text, hidden-instruction markers, and instruction-override phrases.
 - **`bastyn inspect-server`**, an explicit command that connects to an MCP server over Streamable HTTP or stdio and writes its tool list to a snapshot file. `bastyn scan` itself still makes no connection to MCP servers.
+- **The text report now has a "Files read" section, and `--show-coverage` lists every file in it.** The section always prints a count of skill files, skill reference files, MCP configs and instruction files that were read, so a clean result shows whether skills were checked. With `--show-coverage` it also lists each path, grouped by kind. JSON, SARIF, findings and exit codes are unchanged. The GitHub Action has a matching `show-coverage` input.
 
 ### Fixed
 

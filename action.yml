@@ -42,6 +42,10 @@ inputs:
     description: Include context-dependent observations alongside defects.
     required: false
     default: "false"
+  show-coverage:
+    description: List every file the scan read in the text report, grouped by kind. Without it the report prints only counts.
+    required: false
+    default: "false"
   offline:
     description: Skip the CVE lookup, which is the only step that uses the network.
     required: false
@@ -116,6 +120,7 @@ runs:
         SARIF_FILE: ${{ inputs.sarif-file }}
         FAIL_ON: ${{ inputs.fail-on }}
         SHOW_OBSERVATIONS: ${{ inputs.show-observations }}
+        SHOW_COVERAGE: ${{ inputs.show-coverage }}
         OFFLINE: ${{ inputs.offline }}
         EXCLUDE: ${{ inputs.exclude }}
       run: |
@@ -138,6 +143,7 @@ runs:
         args=(scan "$SCAN_PATH" --format "$SCAN_FORMAT" --fail-on "$FAIL_ON")
         (( ${#exclude_args[@]} )) && args+=("${exclude_args[@]}")
         [ "$SHOW_OBSERVATIONS" = "true" ] && args+=(--show-observations)
+        [ "$SHOW_COVERAGE" = "true" ] && args+=(--show-coverage)
         [ "$OFFLINE" = "true" ] && args+=(--offline)
 
         # SARIF always goes to a file when asked for, independently of the
