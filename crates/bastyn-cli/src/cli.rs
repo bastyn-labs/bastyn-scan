@@ -262,8 +262,8 @@ pub(crate) struct ScanArgs {
 
     /// Connect to the public https MCP servers named in config files and
     /// check the tools they list. Off by default: a scan otherwise contacts
-    /// no MCP server. Entries with headers or placeholders, commands, and
-    /// non-public addresses are never contacted. `--offline` overrides this
+    /// no MCP server. Entries with headers, credentials in the URL or
+    /// placeholders, commands, and non-public addresses are never contacted. `--offline` overrides this
     /// flag. Servers that are not contacted are listed under Coverage gaps.
     #[arg(long)]
     pub(crate) inspect_remote: bool,

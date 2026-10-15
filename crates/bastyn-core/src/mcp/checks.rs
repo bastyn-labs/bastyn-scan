@@ -143,6 +143,22 @@ fn entry_start(contents: &str, name: &str) -> Option<usize> {
     None
 }
 
+/// Where server `name`'s entry starts: (1-based line, 1-based column counted in
+/// characters, trimmed text of that line). Falls back to [`locate`]'s line and
+/// column 1 when the file does not spell the entry as a key or table header.
+pub(crate) fn locate_entry(contents: &str, name: &str) -> (usize, usize, String) {
+    if let Some(start) = entry_start(contents, name) {
+        let before = &contents[..start];
+        let line_start = before.rfind('\n').map_or(0, |at| at + 1);
+        let line = before.matches('\n').count() + 1;
+        let column = contents[line_start..start].chars().count() + 1;
+        let text = contents[line_start..].lines().next().unwrap_or_default();
+        return (line, column, text.trim().to_string());
+    }
+    let (line, snippet) = locate(contents, name);
+    (line, 1, snippet)
+}
+
 /// Like [`locate`], but looks only from where server `name`'s entry starts,
 /// so two servers with the same text each get their own line. The first of
 /// `needles` that occurs from there on is used; when none does, or the entry
@@ -1536,5 +1552,48 @@ mod tests {
         // A stdio entry has no wire URL; an argument that looks like one is not this finding.
         let entry = server(r#"{"command": "node", "args": ["s.js"], "env": {}}"#);
         assert!(check_secret_in_url("m", &entry, Path::new("mcp.json"), "{}").is_none());
+    }
+
+    #[test]
+    fn locate_entry_finds_a_pretty_printed_json_key() {
+        let contents = "{\n  \"mcpServers\": {\n    \"a\": {\"url\": \"https://x\"}\n  }\n}\n";
+        let (line, column, snippet) = locate_entry(contents, "a");
+        assert_eq!((line, column), (3, 5));
+        assert_eq!(snippet, "\"a\": {\"url\": \"https://x\"}");
+    }
+
+    #[test]
+    fn locate_entry_separates_two_servers_on_one_minified_line() {
+        let contents = r#"{"mcpServers":{"a":{"url":"https://a"},"b":{"url":"https://b"}}}"#;
+        let (line_a, column_a, _) = locate_entry(contents, "a");
+        let (line_b, column_b, _) = locate_entry(contents, "b");
+        assert_eq!((line_a, line_b), (1, 1));
+        assert!(column_a > 1 && column_b > column_a, "{column_a} {column_b}");
+    }
+
+    #[test]
+    fn locate_entry_finds_yaml_and_toml_entries() {
+        let yaml = "servers:\n  remote:\n    url: https://x\n";
+        assert_eq!(locate_entry(yaml, "remote").0, 2);
+        assert_eq!(locate_entry(yaml, "remote").1, 3);
+        let toml = "[mcp_servers.remote]\nurl = \"https://x\"\n";
+        let (line, column, snippet) = locate_entry(toml, "remote");
+        assert_eq!((line, column), (1, 1));
+        assert_eq!(snippet, "[mcp_servers.remote]");
+    }
+
+    #[test]
+    fn locate_entry_prefers_the_real_key_over_a_substring_of_another() {
+        let contents = "{\n  \"mcpServers\": {\n    \"mcp\": {\"url\": \"https://x\"}\n  }\n}\n";
+        let (line, column, _) = locate_entry(contents, "mcp");
+        assert_eq!((line, column), (3, 5));
+    }
+
+    #[test]
+    fn locate_entry_falls_back_to_the_first_match_or_the_first_line() {
+        let contents = "{\n  \"mcpServers\": {}\n}\n";
+        assert_eq!(locate_entry(contents, "mcp").0, 2);
+        assert_eq!(locate_entry(contents, "mcp").1, 1);
+        assert_eq!(locate_entry(contents, "absent"), (1, 1, "{".to_string()));
     }
 }

@@ -735,10 +735,10 @@ fn remote_status_sentence(status: RemoteStatus) -> Option<&'static str> {
             Some("not contacted because the address is not a public https address:")
         }
         RemoteStatus::NeedsCredentials => Some(
-            "not contacted because the entry carries headers or a placeholder, or the server asked for credentials:",
+            "not inspected because the entry carries credentials, headers or a placeholder, or the server asked for credentials:",
         ),
         RemoteStatus::Unsupported => {
-            Some("not contacted because the entry is a command or uses the older SSE transport:")
+            Some("not inspected because the entry is a command or uses the older SSE transport:")
         }
         RemoteStatus::Unreachable => Some("contacted but did not return a usable tool list:"),
         RemoteStatus::Offline => Some("not contacted because `--offline` was given:"),
@@ -2122,8 +2122,8 @@ mod tests {
         );
         for sentence in [
             "not contacted because the address is not a public https address:",
-            "not contacted because the entry carries headers or a placeholder, or the server asked for credentials:",
-            "not contacted because the entry is a command or uses the older SSE transport:",
+            "not inspected because the entry carries credentials, headers or a placeholder, or the server asked for credentials:",
+            "not inspected because the entry is a command or uses the older SSE transport:",
             "contacted but did not return a usable tool list:",
             "not contacted because `--offline` was given:",
         ] {

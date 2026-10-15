@@ -126,10 +126,11 @@ impl SkipReason {
 /// Which agent files a scan covered, by kind, and what it skipped.
 ///
 /// Every key is always serialised, except `remote_servers`, which is omitted
-/// when empty (it is filled only when `--inspect-remote` ran). An empty `mcp_manifests` says that no MCP
-/// configuration was parsed, which is information a consumer needs and cannot
-/// get from the absence of a key. Paths use forward slashes and are relative
-/// to the scanned root, in the order the scan walked them.
+/// when empty (it is filled only when `--inspect-remote` ran). An empty
+/// `mcp_manifests` says that no MCP configuration was parsed, which is
+/// information a consumer needs and cannot get from the absence of a key.
+/// Paths use forward slashes and are relative to the scanned root, in the
+/// order the scan walked them.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Coverage {
     /// MCP configuration files that were read and parsed. A config that was
@@ -179,10 +180,11 @@ pub enum RemoteStatus {
     Inspected,
     /// The URL is not a public `https` address, so it was not contacted.
     NotPublic,
-    /// The entry carries headers or a variable placeholder, so it was not
-    /// contacted.
+    /// The entry carries credentials, headers or a variable placeholder, so it
+    /// was not contacted, or the server answered 401 or 403.
     NeedsCredentials,
-    /// The entry is not a Streamable HTTP server (a command, or SSE).
+    /// The entry is not a Streamable HTTP server: a command, or SSE. A server
+    /// that turns out to use SSE is only recognised after it was contacted.
     Unsupported,
     /// The server was contacted and the capture failed.
     Unreachable,

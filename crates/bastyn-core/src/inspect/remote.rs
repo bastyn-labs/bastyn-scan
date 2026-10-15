@@ -27,9 +27,10 @@ pub(crate) enum Plan {
 /// Decide, without touching the network, whether an entry may be contacted.
 ///
 /// The checks run in this order: an entry that is not a Streamable HTTP
-/// server (including one that declares `stdio` or SSE) is unsupported; one with headers, a `$` placeholder or a user name
-/// or password in its URL needs credentials; one whose URL is not a public `https` address is not
-/// public; anything else is captured.
+/// server (including one that declares `stdio` or SSE) is unsupported; one
+/// with headers, a `$` placeholder or a user name or password in its URL needs
+/// credentials; one whose URL is not a public `https` address is not public;
+/// anything else is captured.
 pub(crate) fn plan_entry(entry: &ServerEntry) -> Plan {
     if matches!(entry.transport(), Some(Transport::Sse | Transport::Stdio)) {
         return Plan::Skip(RemoteStatus::Unsupported);
@@ -119,11 +120,13 @@ pub(crate) fn inspect_configs(
             match result {
                 Err(status) => outcome.servers.push(record(*status, None)),
                 Ok(snapshot) => {
-                    let (line, snippet) = crate::mcp::checks::locate(contents, &server);
+                    let (line, column, snippet) =
+                        crate::mcp::checks::locate_entry(contents, &server);
                     outcome.findings.extend(crate::mcp::check_snapshot_at(
                         snapshot,
                         Path::new(file),
                         line,
+                        column,
                         &snippet,
                         &server,
                     ));
