@@ -75,7 +75,7 @@ pub fn capture_http(target: &HttpTarget, limits: &Limits) -> Result<Capture, Ins
 /// on a public address.
 ///
 /// Behaves like [`capture_http`] except for the address rules: the URL is
-/// checked syntactically with [`guard::check_public_https_url`] first, and the
+/// checked syntactically with `guard::check_public_https_url` first, and the
 /// connection itself is made through a resolver that refuses every non-public
 /// address. The name is looked up only at connect time, under the connect
 /// timeout, so a name that does not resolve is a network error and a name that
@@ -924,6 +924,12 @@ mod tests {
         assert!(matches!(error, InspectError::Guard(_)));
     }
 
+    /// Unix resolvers read a bare integer host as an IPv4 address, so the
+    /// pinned resolver sees 127.0.0.1 and refuses it. Windows treats it as an
+    /// ordinary name and waits for DNS, so the outcome and the time differ
+    /// there. On every platform an address that does resolve is checked by the
+    /// pinned resolver, which the resolver tests above cover.
+    #[cfg(unix)]
     #[test]
     fn the_public_path_refuses_a_decimal_encoded_loopback_host() {
         let error = capture_http_public(
