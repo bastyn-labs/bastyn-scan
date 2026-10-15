@@ -249,7 +249,8 @@ pub(crate) struct ScanArgs {
     #[arg(long)]
     pub(crate) show_coverage: bool,
 
-    /// Skip the CVE lookup, and do not send the anonymous scan summary.
+    /// Skip the CVE lookup, and do not send the anonymous scan summary. It
+    /// also overrides --inspect-remote.
     #[arg(long)]
     pub(crate) offline: bool,
 
@@ -258,6 +259,19 @@ pub(crate) struct ScanArgs {
         help = "Do not send the anonymous scan summary. Reporting also stops with --offline, or when DO_NOT_TRACK is set to a value other than 0"
     )]
     pub(crate) no_reporting: bool,
+
+    /// Connect to the public https MCP servers named in config files and
+    /// check the tools they list. Off by default: a scan otherwise contacts
+    /// no MCP server. Entries with headers or placeholders, commands, and
+    /// non-public addresses are never contacted. `--offline` overrides this
+    /// flag. Servers that are not contacted are listed under Coverage gaps.
+    #[arg(long)]
+    pub(crate) inspect_remote: bool,
+
+    /// With --inspect-remote, write each inspected server's tool list to DIR
+    /// as *.bastyn-tools.json.
+    #[arg(long, value_name = "DIR", requires = "inspect_remote")]
+    pub(crate) save_snapshots: Option<std::path::PathBuf>,
 
     /// Do not scan paths matching GLOB. Repeatable.
     ///

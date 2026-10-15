@@ -1607,3 +1607,169 @@ fn show_coverage_lists_the_files_read_in_text_and_changes_nothing_else() {
         json_scan(dir.path(), &[])["coverage"]
     );
 }
+
+/// A config naming one https MCP server at the given URL, and nothing else, so
+/// the tree has no dependency manifest and the scan makes no CVE request.
+fn mcp_config_tree(url: &str) -> TempDir {
+    tree(&[(
+        ".mcp.json",
+        &format!(r#"{{"mcpServers":{{"local":{{"url":"{url}"}}}}}}"#),
+    )])
+}
+
+/// A loopback listener that records whether anything connected to it.
+fn loopback_listener() -> (std::net::TcpListener, u16) {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let port = listener.local_addr().unwrap().port();
+    (listener, port)
+}
+
+/// The listener saw no connection at all.
+fn assert_no_connection(listener: &std::net::TcpListener) {
+    let error = listener.accept().err();
+    assert_eq!(
+        error.map(|e| e.kind()),
+        Some(std::io::ErrorKind::WouldBlock),
+        "the listener must see no connection"
+    );
+}
+
+/// The remote-inspection flags appear in the scan help.
+#[test]
+fn scan_help_lists_the_remote_inspection_flags() {
+    let dir = TempDir::new().unwrap();
+    bastyn(dir.path())
+        .args(["scan", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--inspect-remote"))
+        .stdout(predicate::str::contains("--save-snapshots"));
+}
+
+/// `--save-snapshots` is meaningless without `--inspect-remote`: a usage
+/// error, and nothing is created.
+#[test]
+fn save_snapshots_requires_inspect_remote() {
+    let dir = mcp_config_tree("https://example.com/mcp");
+    let out = dir.path().join("snapshots");
+
+    bastyn(dir.path())
+        .args(["scan", "--offline", "--no-reporting", "--save-snapshots"])
+        .arg(&out)
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("required arguments"))
+        .stderr(predicate::str::contains("--inspect-remote"));
+    assert!(!out.exists());
+}
+
+/// A loopback address is never contacted, and is reported as not public.
+#[test]
+fn inspect_remote_does_not_contact_a_loopback_server() {
+    let (listener, port) = loopback_listener();
+    let dir = mcp_config_tree(&format!("https://127.0.0.1:{port}/mcp"));
+
+    let output = bastyn(dir.path())
+        .args([
+            "scan",
+            "--inspect-remote",
+            "--format",
+            "json",
+            "--no-reporting",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        report["coverage"]["remote_servers"][0],
+        serde_json::json!({"file": ".mcp.json", "server": "local", "status": "not_public"})
+    );
+    assert_no_connection(&listener);
+}
+
+/// `--offline` overrides `--inspect-remote`: an address that would otherwise
+/// be eligible is reported as offline.
+#[test]
+fn offline_overrides_inspect_remote() {
+    let dir = mcp_config_tree("https://example.com/mcp");
+
+    let output = bastyn(dir.path())
+        .args([
+            "scan",
+            "--inspect-remote",
+            "--offline",
+            "--format",
+            "json",
+            "--no-reporting",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        report["coverage"]["remote_servers"][0],
+        serde_json::json!({"file": ".mcp.json", "server": "local", "status": "offline"})
+    );
+}
+
+/// Without the flag the report has no `remote_servers` key and is otherwise
+/// the usual shape.
+#[test]
+fn remote_servers_are_absent_without_the_flag() {
+    let dir = mcp_config_tree("https://example.com/mcp");
+
+    let output = bastyn(dir.path())
+        .args(["scan", "--offline", "--format", "json", "--no-reporting"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(report["coverage"].get("remote_servers").is_none());
+    assert!(report["summary"].is_object());
+    assert!(report["findings"].is_array());
+}
+
+/// The text report lists a server that was not contacted.
+#[test]
+fn text_report_lists_the_uncontacted_remote_server() {
+    let (listener, port) = loopback_listener();
+    let dir = mcp_config_tree(&format!("https://127.0.0.1:{port}/mcp"));
+
+    bastyn(dir.path())
+        .args(["scan", "--inspect-remote", "--no-reporting"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Remote MCP servers: 0 inspected, 1 not inspected.",
+        ))
+        .stdout(predicate::str::contains(
+            "not contacted because the address is not a public https address:",
+        ))
+        .stdout(predicate::str::contains(".mcp.json: local"));
+    assert_no_connection(&listener);
+}
+
+/// Offline, nothing is inspected, so no snapshot directory is created.
+#[test]
+fn save_snapshots_creates_nothing_when_offline() {
+    let dir = mcp_config_tree("https://example.com/mcp");
+    let out = dir.path().join("snapshots");
+
+    bastyn(dir.path())
+        .args([
+            "scan",
+            "--inspect-remote",
+            "--offline",
+            "--no-reporting",
+            "--save-snapshots",
+        ])
+        .arg(&out)
+        .assert()
+        .code(0);
+    assert!(!out.exists());
+}
