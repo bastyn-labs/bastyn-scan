@@ -125,7 +125,8 @@ impl SkipReason {
 
 /// Which agent files a scan covered, by kind, and what it skipped.
 ///
-/// Every key is always serialised. An empty `mcp_manifests` says that no MCP
+/// Every key is always serialised, except `remote_servers`, which is omitted
+/// when empty (it is filled only when `--inspect-remote` ran). An empty `mcp_manifests` says that no MCP
 /// configuration was parsed, which is information a consumer needs and cannot
 /// get from the absence of a key. Paths use forward slashes and are relative
 /// to the scanned root, in the order the scan walked them.

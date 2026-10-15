@@ -33,6 +33,12 @@ mod tests {
     /// that vanish when empty. Presentation work on the terminal renderer has
     /// no business changing any of it, and a diff here is the fastest way to
     /// notice that it did.
+    ///
+    /// `coverage.remote_servers` is absent here because it is omitted when
+    /// empty. With `--inspect-remote` it is present as an array of
+    /// `{"file", "server", "status", "tools"?}`, `status` being one of
+    /// `inspected`, `not_public`, `needs_credentials`, `unsupported`,
+    /// `unreachable` or `offline`, and `tools` present only when inspected.
     const CONTRACT: &str = r#"{
   "bastyn_version": "0.1.0",
   "root": "/repo",
@@ -466,5 +472,53 @@ mod tests {
         let report: crate::report::Report = serde_json::from_value(older).unwrap();
 
         assert_eq!(report.coverage, crate::report::Coverage::default());
+    }
+
+    #[test]
+    fn coverage_remote_servers_serialise_as_data_and_vanish_when_empty() {
+        use crate::report::{RemoteServer, RemoteStatus};
+        let mut report = report_with(CveStatus::NoManifest);
+        let value: serde_json::Value = serde_json::from_str(&render(&report).unwrap()).unwrap();
+        assert!(value["coverage"].get("remote_servers").is_none());
+
+        let server = |name: &str, status, tools| RemoteServer {
+            file: "mcp.json".to_owned(),
+            server: name.to_owned(),
+            status,
+            tools,
+        };
+        report.coverage.remote_servers = vec![
+            server("docs", RemoteStatus::Inspected, Some(3)),
+            server("local", RemoteStatus::NotPublic, None),
+            server("keyed", RemoteStatus::NeedsCredentials, None),
+            server("cmd", RemoteStatus::Unsupported, None),
+            server("down", RemoteStatus::Unreachable, None),
+            server("held", RemoteStatus::Offline, None),
+        ];
+        let value: serde_json::Value = serde_json::from_str(&render(&report).unwrap()).unwrap();
+        let entries = value["coverage"]["remote_servers"].as_array().unwrap();
+        assert_eq!(
+            entries[0],
+            serde_json::json!({"file": "mcp.json", "server": "docs", "status": "inspected", "tools": 3})
+        );
+        let statuses: Vec<&str> = entries
+            .iter()
+            .map(|e| e["status"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            statuses,
+            [
+                "inspected",
+                "not_public",
+                "needs_credentials",
+                "unsupported",
+                "unreachable",
+                "offline"
+            ]
+        );
+        assert!(entries[1..].iter().all(|e| e.get("tools").is_none()));
+
+        let back: crate::report::Report = serde_json::from_value(value).unwrap();
+        assert_eq!(back.coverage.remote_servers, report.coverage.remote_servers);
     }
 }

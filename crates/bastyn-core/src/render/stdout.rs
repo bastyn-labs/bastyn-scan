@@ -35,7 +35,7 @@ use std::fmt::Write as _;
 use crate::category::Layer;
 use crate::compliance::{CROSSWALK_INTRO, Crosswalk, TERMINAL_CAVEAT};
 use crate::finding::{Confidence, Finding, Kind, Severity};
-use crate::report::{CveStatus, Report, Skip, SkipReason};
+use crate::report::{CveStatus, RemoteServer, RemoteStatus, Report, Skip, SkipReason};
 
 use super::{CrosswalkDetail, Glyphs, ScanResult, StdoutOptions, TerminalReport};
 
@@ -682,8 +682,67 @@ fn render_coverage(out: &mut String, report: &Report, options: StdoutOptions) {
         out.push('\n');
     }
 
+    write_remote_servers(out, &report.coverage.remote_servers, options);
+
     write_wrapped(out, &cve_sentence(&report.cve), "", None, options);
     out.push_str("\n\n");
+}
+
+/// Which remote servers `--inspect-remote` reached and which it did not.
+///
+/// Inspected servers are only counted; their findings are in the report. The
+/// rest are listed under one sentence per status, in the order of
+/// [`RemoteStatus`]. Prints nothing when the scan did not look at remote
+/// servers.
+fn write_remote_servers(out: &mut String, servers: &[RemoteServer], options: StdoutOptions) {
+    if servers.is_empty() {
+        return;
+    }
+    let inspected = servers
+        .iter()
+        .filter(|server| server.status == RemoteStatus::Inspected)
+        .count();
+    let not_inspected = servers.len() - inspected;
+    let counts = if not_inspected == 0 {
+        format!("Remote MCP servers: {inspected} inspected.")
+    } else {
+        format!("Remote MCP servers: {inspected} inspected, {not_inspected} not inspected.")
+    };
+    write_wrapped(out, &counts, "", None, options);
+
+    let mut by_status: BTreeMap<RemoteStatus, Vec<&RemoteServer>> = BTreeMap::new();
+    for server in servers {
+        by_status.entry(server.status).or_default().push(server);
+    }
+    for (status, entries) in by_status {
+        let Some(sentence) = remote_status_sentence(status) else {
+            continue;
+        };
+        write_wrapped(out, sentence, "", None, options);
+        for entry in entries {
+            let _ = writeln!(out, "{PROSE}{}: {}", entry.file, entry.server);
+        }
+    }
+    out.push('\n');
+}
+
+/// Why a remote server was not inspected. `None` for the inspected status,
+/// which is counted and not listed.
+fn remote_status_sentence(status: RemoteStatus) -> Option<&'static str> {
+    match status {
+        RemoteStatus::Inspected => None,
+        RemoteStatus::NotPublic => {
+            Some("not contacted because the address is not a public https address:")
+        }
+        RemoteStatus::NeedsCredentials => Some(
+            "not contacted because the entry carries headers or a placeholder, or the server asked for credentials:",
+        ),
+        RemoteStatus::Unsupported => {
+            Some("not contacted because the entry is a command or uses the older SSE transport:")
+        }
+        RemoteStatus::Unreachable => Some("contacted but did not return a usable tool list:"),
+        RemoteStatus::Offline => Some("not contacted because `--offline` was given:"),
+    }
 }
 
 /// Two columns: what was skipped, and the one thing that differs between
@@ -2019,6 +2078,111 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("CVEs were not checked"), "{text}");
+    }
+
+    fn remote(
+        file: &str,
+        server: &str,
+        status: crate::report::RemoteStatus,
+    ) -> crate::report::RemoteServer {
+        crate::report::RemoteServer {
+            file: file.to_owned(),
+            server: server.to_owned(),
+            status,
+            tools: None,
+        }
+    }
+
+    /// Every status that was not inspected gets one sentence and its entries,
+    /// after the skipped-file groups and before the CVE sentence. Inspected
+    /// servers are counted and not listed.
+    #[test]
+    fn remote_servers_are_grouped_by_status_before_the_cve_sentence() {
+        use crate::report::RemoteStatus::{
+            Inspected, NeedsCredentials, NotPublic, Offline, Unreachable, Unsupported,
+        };
+        let mut report = report_with(CveStatus::NoManifest);
+        report.skipped = every_skip_reason();
+        report.coverage.remote_servers = vec![
+            remote("a.json", "listed-ok", Inspected),
+            remote("a.json", "local", NotPublic),
+            remote("b.json", "keyed", NeedsCredentials),
+            remote("b.json", "cmd", Unsupported),
+            remote("c.json", "down", Unreachable),
+            remote("c.json", "held", Offline),
+        ];
+
+        let text = summarised(&report, false);
+        let start = position(&text, "Coverage gaps");
+        let section = unwrapped(&text[start..position(&text, "Scan complete:")]);
+
+        assert!(
+            section.contains("Remote MCP servers: 1 inspected, 5 not inspected."),
+            "{section}"
+        );
+        for sentence in [
+            "not contacted because the address is not a public https address:",
+            "not contacted because the entry carries headers or a placeholder, or the server asked for credentials:",
+            "not contacted because the entry is a command or uses the older SSE transport:",
+            "contacted but did not return a usable tool list:",
+            "not contacted because `--offline` was given:",
+        ] {
+            assert!(section.contains(sentence), "{sentence}\n{section}");
+        }
+        for entry in [
+            "a.json: local",
+            "b.json: keyed",
+            "b.json: cmd",
+            "c.json: down",
+            "c.json: held",
+        ] {
+            assert!(section.contains(entry), "{entry}\n{section}");
+        }
+        assert!(!section.contains("listed-ok"), "{section}");
+
+        let order = [
+            "Remote MCP servers:",
+            "a public https address:",
+            "asked for credentials:",
+            "older SSE transport:",
+            "usable tool list:",
+            "`--offline` was given:",
+            "CVEs were not checked",
+        ];
+        let at: Vec<usize> = order.iter().map(|n| position(&section, n)).collect();
+        assert!(at.windows(2).all(|w| w[0] < w[1]), "{section}");
+        let last_skip = report.skipped.iter().map(|s| position(&section, &s.path));
+        assert!(
+            last_skip.max().unwrap_or(0) < at[0],
+            "remote lines must follow the skipped groups:\n{section}"
+        );
+        // Not-inspected servers are never counted as skipped files.
+        assert_eq!(text.matches("Remote MCP servers:").count(), 1, "{text}");
+    }
+
+    /// With nothing left uninspected there are no status sentences.
+    #[test]
+    fn only_inspected_servers_print_just_the_count() {
+        let mut report = report_with(CveStatus::NoManifest);
+        report.coverage.remote_servers = vec![
+            remote("a.json", "one", crate::report::RemoteStatus::Inspected),
+            remote("a.json", "two", crate::report::RemoteStatus::Inspected),
+        ];
+        let text = summarised(&report, false);
+        assert!(
+            text.contains("Remote MCP servers: 2 inspected.\n"),
+            "{text}"
+        );
+        assert!(!text.contains("not inspected"), "{text}");
+        assert!(!text.contains("not contacted"), "{text}");
+        assert!(!text.contains("a.json: one"), "{text}");
+    }
+
+    /// A scan that did not inspect remote servers prints nothing about them.
+    #[test]
+    fn a_default_report_has_no_remote_server_lines() {
+        let text = summarised(&report_with(CveStatus::NoManifest), false);
+        assert!(!text.contains("Remote MCP servers"), "{text}");
     }
 
     // -----------------------------------------------------------------
