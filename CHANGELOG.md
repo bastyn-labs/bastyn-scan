@@ -11,6 +11,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **New checks `BAS-MCP-010` to `BAS-MCP-012` run on tools snapshot files (`*.bastyn-tools.json`)**: hidden Unicode in tool text, hidden-instruction markers, and instruction-override phrases.
 - **`bastyn inspect-server`**, an explicit command that connects to an MCP server over Streamable HTTP or stdio and writes its tool list to a snapshot file. `bastyn scan` itself still makes no connection to MCP servers.
 
+### Fixed
+
+- **`BAS-MCP-011` and `BAS-MCP-012` on tools snapshot files now match across line breaks and repeated spaces, and `BAS-MCP-012` also matches common variants such as `ignore all previous instructions`, `disregard all prior instructions` and `forget your instructions`.** Phrases are now matched as whole words, so `disregard priority` no longer matches.
+
 ## [0.5.0] - 2026-10-14
 
 ### Added
