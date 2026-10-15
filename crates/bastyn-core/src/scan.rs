@@ -15,6 +15,7 @@ use crate::error::{Error, Result};
 use crate::finding::{Finding, Kind};
 use crate::generated;
 use crate::infra;
+use crate::inspect::{Limits, remote};
 use crate::instructions;
 use crate::mcp;
 use crate::observe::{Observer, Phase, Silent};
@@ -36,6 +37,19 @@ pub struct ScanOptions {
     /// cannot show that its absence is wrong, and putting those in front of a
     /// developer by default is what makes a scanner get uninstalled.
     pub include_observations: bool,
+    /// Connect to the public `https` MCP servers named in config files and
+    /// check the tools they list.
+    ///
+    /// Off by default: a scan otherwise contacts no MCP server. Entries that
+    /// carry credentials, name a command, or point at a non-public address
+    /// are never contacted. `offline` wins: with it set, nothing is contacted.
+    pub inspect_remote: bool,
+    /// With `inspect_remote`, write one `*.bastyn-tools.json` file per
+    /// inspected server into this directory, creating it if missing.
+    ///
+    /// Nothing is written, and the directory is not created, when `offline`
+    /// is set.
+    pub save_snapshots: Option<PathBuf>,
 }
 
 /// Scan `root` and produce a report.
@@ -49,6 +63,41 @@ pub struct ScanOptions {
 /// failed.
 pub fn scan(root: &Path, options: &ScanOptions) -> Result<Report> {
     scan_observed(root, options, &Silent)
+}
+
+/// Inspect the remote servers named in the MCP configs found by the analysis.
+///
+/// A config that can no longer be read is recorded as skipped. Findings join
+/// the analysis; the per-server outcome goes into the coverage.
+fn inspect_remote_servers(
+    root: &Path,
+    options: &ScanOptions,
+    observer: &dyn Observer,
+    analysis: &mut Analysis,
+) -> Result<()> {
+    let mut configs = Vec::new();
+    for path in &analysis.coverage.mcp_manifests {
+        match std::fs::read_to_string(root.join(path)) {
+            Ok(contents) => configs.push((path.clone(), contents)),
+            Err(_) => {
+                analysis.skipped.insert(Skip::unreadable(path.clone()));
+            }
+        }
+    }
+    let outcome = remote::inspect_configs(&configs, options.offline, &|url| {
+        remote::capture_snapshot(url, &Limits::default())
+    });
+    for finding in outcome.findings {
+        observer.found(&finding);
+        analysis.findings.push(finding);
+    }
+    analysis.coverage.remote_servers = outcome.servers;
+    if let Some(dir) = &options.save_snapshots
+        && !options.offline
+    {
+        remote::write_snapshots(dir, &outcome.snapshots)?;
+    }
+    Ok(())
 }
 
 /// Scan `root`, reporting progress to `observer`.
@@ -93,6 +142,10 @@ pub fn scan_observed(
     for finding in cve::check_wildcard_framework_dependencies(&analysis.unresolved_dependencies) {
         observer.found(&finding);
         analysis.findings.push(finding);
+    }
+
+    if options.inspect_remote {
+        inspect_remote_servers(root, options, observer, &mut analysis)?;
     }
 
     observer.phase_finished(&analysing);
@@ -640,7 +693,7 @@ mod tests {
 
     use tempfile::TempDir;
 
-    use crate::report::SkipReason;
+    use crate::report::{RemoteServer, RemoteStatus, SkipReason};
 
     fn tree(entries: &[(&str, &str)]) -> TempDir {
         let dir = TempDir::new().unwrap();
@@ -1506,5 +1559,134 @@ def advise(question):
                 "observer order differed on {threads} threads"
             );
         }
+    }
+
+    fn remote_options(offline: bool) -> ScanOptions {
+        ScanOptions {
+            offline,
+            inspect_remote: true,
+            ..ScanOptions::default()
+        }
+    }
+
+    const REMOTE_CONFIG: &str = r#"{"mcpServers":{"docs":{"url":"https://example.com/mcp"}}}"#;
+
+    #[test]
+    fn remote_inspection_is_off_by_default() {
+        let dir = tree(&[(".mcp.json", REMOTE_CONFIG)]);
+        let report = scan(dir.path(), &offline()).unwrap();
+        assert_eq!(report.coverage.remote_servers, []);
+        let json = serde_json::to_value(&report).unwrap();
+        assert!(json["coverage"].get("remote_servers").is_none());
+    }
+
+    #[test]
+    fn offline_lists_eligible_remote_servers_without_connecting() {
+        let dir = tree(&[(".mcp.json", REMOTE_CONFIG)]);
+        let report = scan(dir.path(), &remote_options(true)).unwrap();
+        assert_eq!(report.coverage.mcp_manifests, [".mcp.json"]);
+        assert_eq!(
+            report.coverage.remote_servers,
+            [RemoteServer {
+                file: ".mcp.json".to_owned(),
+                server: "docs".to_owned(),
+                status: RemoteStatus::Offline,
+                tools: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn a_non_public_remote_url_is_never_connected_to() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let config = format!(
+            r#"{{"mcpServers":{{"local":{{"url":"https://127.0.0.1:{port}/mcp"}},"plain":{{"url":"http://127.0.0.1:1/mcp"}}}}}}"#
+        );
+        let dir = tree(&[(".mcp.json", &config)]);
+        let report = scan(dir.path(), &remote_options(false)).unwrap();
+        let statuses: Vec<_> = report
+            .coverage
+            .remote_servers
+            .iter()
+            .map(|server| (server.server.as_str(), server.status))
+            .collect();
+        assert_eq!(
+            statuses,
+            [
+                ("local", RemoteStatus::NotPublic),
+                ("plain", RemoteStatus::NotPublic)
+            ]
+        );
+        assert_eq!(report.findings, []);
+        let accepted = listener.accept();
+        assert!(
+            matches!(&accepted, Err(e) if e.kind() == std::io::ErrorKind::WouldBlock),
+            "the scan connected to a non-public address: {accepted:?}"
+        );
+    }
+
+    #[test]
+    fn commands_and_headers_are_not_contacted() {
+        let config = r#"{"mcpServers":{
+            "a-cmd":{"command":"npx","args":["x"]},
+            "b-auth":{"url":"https://example.com/mcp","headers":{"Authorization":"x"}}
+        }}"#;
+        let dir = tree(&[(".mcp.json", config)]);
+        let report = scan(dir.path(), &remote_options(false)).unwrap();
+        let statuses: Vec<_> = report
+            .coverage
+            .remote_servers
+            .iter()
+            .map(|server| (server.server.as_str(), server.status))
+            .collect();
+        assert_eq!(
+            statuses,
+            [
+                ("a-cmd", RemoteStatus::Unsupported),
+                ("b-auth", RemoteStatus::NeedsCredentials)
+            ]
+        );
+    }
+
+    #[test]
+    fn save_snapshots_with_offline_does_not_create_the_directory() {
+        let dir = tree(&[(".mcp.json", REMOTE_CONFIG)]);
+        let out = TempDir::new().unwrap();
+        let target = out.path().join("snapshots");
+        let options = ScanOptions {
+            save_snapshots: Some(target.clone()),
+            ..remote_options(true)
+        };
+        scan(dir.path(), &options).unwrap();
+        assert!(!target.exists());
+    }
+
+    #[test]
+    fn remote_servers_follow_config_then_entry_order() {
+        let dir = tree(&[
+            (
+                "a/mcp.json",
+                r#"{"mcpServers":{"zeta":{"command":"x"},"alpha":{"command":"y"}}}"#,
+            ),
+            ("b/mcp.json", r#"{"mcpServers":{"only":{"command":"z"}}}"#),
+        ]);
+        let report = scan(dir.path(), &remote_options(true)).unwrap();
+        assert_eq!(report.coverage.mcp_manifests, ["a/mcp.json", "b/mcp.json"]);
+        let order: Vec<_> = report
+            .coverage
+            .remote_servers
+            .iter()
+            .map(|server| (server.file.as_str(), server.server.as_str()))
+            .collect();
+        assert_eq!(
+            order,
+            [
+                ("a/mcp.json", "alpha"),
+                ("a/mcp.json", "zeta"),
+                ("b/mcp.json", "only")
+            ]
+        );
     }
 }

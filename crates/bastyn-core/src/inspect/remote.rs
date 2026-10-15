@@ -7,12 +7,13 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::finding::Finding;
-use crate::inspect::{InspectError, Snapshot, guard};
+use crate::inspect::{
+    HttpTarget, InspectError, Limits, Snapshot, capture_http_public, guard, host_of, snapshot_of,
+};
 use crate::mcp::model::{ServerEntry, Transport};
 use crate::report::{RemoteServer, RemoteStatus};
 
 /// What to do with one server entry.
-#[allow(dead_code, reason = "scan calls this in a later change")]
 pub(crate) enum Plan {
     /// Do not contact the entry; record this status.
     Skip(RemoteStatus),
@@ -29,7 +30,6 @@ pub(crate) enum Plan {
 /// server is unsupported; one with headers or a `$` placeholder in its URL
 /// needs credentials; one whose URL is not a public `https` address is not
 /// public; anything else is captured.
-#[allow(dead_code, reason = "scan calls this in a later change")]
 pub(crate) fn plan_entry(entry: &ServerEntry) -> Plan {
     if entry.transport() == Some(Transport::Sse) {
         return Plan::Skip(RemoteStatus::Unsupported);
@@ -49,7 +49,6 @@ pub(crate) fn plan_entry(entry: &ServerEntry) -> Plan {
 }
 
 /// The result of running the policy over a set of configs.
-#[allow(dead_code, reason = "scan calls this in a later change")]
 pub(crate) struct Outcome {
     /// One record per server entry, in config and entry order.
     pub servers: Vec<RemoteServer>,
@@ -78,7 +77,6 @@ fn status_of_error(error: &InspectError) -> RemoteStatus {
 /// skips keep their own status. A URL is captured once however many entries
 /// name it, and a failure is remembered like a success, but each entry gets
 /// its own findings at its own location.
-#[allow(dead_code, reason = "scan calls this in a later change")]
 pub(crate) fn inspect_configs(
     configs: &[(String, String)],
     offline: bool,
@@ -134,6 +132,73 @@ pub(crate) fn inspect_configs(
         }
     }
     outcome
+}
+
+/// Capture the tool list of the public `https` server at `url`.
+///
+/// The connection is pinned to an address that passed the public-address
+/// check. The snapshot is named after the URL's host, as for a direct
+/// inspection of a Streamable HTTP server.
+///
+/// # Errors
+///
+/// Returns an [`InspectError`] when the address is refused or the capture
+/// fails.
+pub(crate) fn capture_snapshot(url: &str, limits: &Limits) -> Result<Snapshot, InspectError> {
+    let target = HttpTarget {
+        url: url.to_owned(),
+        headers: Vec::new(),
+    };
+    let capture = capture_http_public(&target, limits)?;
+    Ok(snapshot_of(host_of(url), "streamable-http", capture))
+}
+
+/// Replace every character that is not `[A-Za-z0-9_-]` with `_`.
+fn sanitise(text: &str) -> String {
+    text.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+/// Write one `<config>-<server>.bastyn-tools.json` file per snapshot into `dir`.
+///
+/// `dir` is created when missing. Names are the sanitised config path and
+/// server name; when two entries produce the same name, later ones in the
+/// given order get `-2`, `-3`, ... before the extension.
+///
+/// # Errors
+///
+/// Returns [`crate::Error::Io`] naming the path that could not be created or
+/// written.
+pub(crate) fn write_snapshots(
+    dir: &Path,
+    snapshots: &[(String, String, Snapshot)],
+) -> Result<(), crate::Error> {
+    std::fs::create_dir_all(dir).map_err(|source| crate::Error::Io {
+        path: dir.to_path_buf(),
+        source,
+    })?;
+    let mut used: HashMap<String, usize> = HashMap::new();
+    for (file, server, snapshot) in snapshots {
+        let base = format!("{}-{}", sanitise(file), sanitise(server));
+        let count = used.entry(base.clone()).or_insert(0);
+        *count += 1;
+        let name = if *count == 1 {
+            format!("{base}.bastyn-tools.json")
+        } else {
+            format!("{base}-{count}.bastyn-tools.json")
+        };
+        let path = dir.join(name);
+        std::fs::write(&path, snapshot.to_json())
+            .map_err(|source| crate::Error::Io { path, source })?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -363,5 +428,101 @@ mod tests {
         assert_eq!(outcome.servers.len(), 0);
         assert_eq!(outcome.findings.len(), 0);
         assert_eq!(outcome.snapshots.len(), 0);
+    }
+
+    fn named_snapshot(name: &str) -> Snapshot {
+        Snapshot::new(
+            ServerInfo {
+                name: name.into(),
+                transport: "streamable-http".into(),
+                protocol_era: "modern".into(),
+                protocol_version: "2026-07-28".into(),
+            },
+            vec![serde_json::json!({"name": "t"})],
+        )
+    }
+
+    fn file_names(dir: &Path) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn write_snapshots_creates_the_directory_and_round_trips() {
+        let root = tempfile::TempDir::new().unwrap();
+        let dir = root.path().join("out/nested");
+        let snapshot = named_snapshot("example.com");
+        let entries = vec![(".mcp.json".to_owned(), "docs".to_owned(), snapshot.clone())];
+        write_snapshots(&dir, &entries).unwrap();
+        assert_eq!(file_names(&dir), ["_mcp_json-docs.bastyn-tools.json"]);
+        let text = std::fs::read_to_string(dir.join("_mcp_json-docs.bastyn-tools.json")).unwrap();
+        assert_eq!(Snapshot::parse(&text).unwrap(), snapshot);
+    }
+
+    #[test]
+    fn write_snapshots_sanitises_the_file_name() {
+        let root = tempfile::TempDir::new().unwrap();
+        let entries = vec![(
+            "a/b.json".to_owned(),
+            "my server!".to_owned(),
+            named_snapshot("x"),
+        )];
+        write_snapshots(root.path(), &entries).unwrap();
+        assert_eq!(
+            file_names(root.path()),
+            ["a_b_json-my_server_.bastyn-tools.json"]
+        );
+    }
+
+    #[test]
+    fn write_snapshots_suffixes_colliding_names_in_input_order() {
+        let root = tempfile::TempDir::new().unwrap();
+        let entries = vec![
+            (
+                "a.json".to_owned(),
+                "s 1".to_owned(),
+                named_snapshot("first"),
+            ),
+            (
+                "a.json".to_owned(),
+                "s!1".to_owned(),
+                named_snapshot("second"),
+            ),
+            (
+                "a.json".to_owned(),
+                "s?1".to_owned(),
+                named_snapshot("third"),
+            ),
+        ];
+        write_snapshots(root.path(), &entries).unwrap();
+        assert_eq!(
+            file_names(root.path()),
+            [
+                "a_json-s_1-2.bastyn-tools.json",
+                "a_json-s_1-3.bastyn-tools.json",
+                "a_json-s_1.bastyn-tools.json",
+            ]
+        );
+        let name_in = |file: &str| {
+            let text = std::fs::read_to_string(root.path().join(file)).unwrap();
+            Snapshot::parse(&text).unwrap().server.name
+        };
+        assert_eq!(name_in("a_json-s_1.bastyn-tools.json"), "first");
+        assert_eq!(name_in("a_json-s_1-2.bastyn-tools.json"), "second");
+        assert_eq!(name_in("a_json-s_1-3.bastyn-tools.json"), "third");
+    }
+
+    #[test]
+    fn write_snapshots_reports_an_unwritable_target_as_io() {
+        let root = tempfile::TempDir::new().unwrap();
+        let blocker = root.path().join("file");
+        std::fs::write(&blocker, "x").unwrap();
+        let entries = vec![("a.json".to_owned(), "s".to_owned(), named_snapshot("x"))];
+        let error = write_snapshots(&blocker.join("sub"), &entries).unwrap_err();
+        assert!(matches!(error, crate::Error::Io { .. }), "{error:?}");
     }
 }

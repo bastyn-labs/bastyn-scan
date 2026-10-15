@@ -62,6 +62,7 @@ pub(crate) fn run(args: &ScanArgs, global: &GlobalArgs) -> anyhow::Result<Outcom
         },
         offline: args.offline,
         include_observations: args.show_observations,
+        ..ScanOptions::default()
     };
 
     let progress = Progress::start(global);

@@ -152,7 +152,7 @@ pub fn escape_control(text: &str) -> String {
 }
 
 /// The host part of `url`, or the whole text when it has none.
-fn host_of(url: &str) -> String {
+pub(crate) fn host_of(url: &str) -> String {
     url.parse::<ureq::http::Uri>()
         .ok()
         .and_then(|uri| uri.host().map(str::to_owned))
@@ -172,7 +172,8 @@ fn string_pairs(
     pairs
 }
 
-fn snapshot_of(name: String, transport: &str, capture: Capture) -> Snapshot {
+/// Build a [`Snapshot`] from a finished capture.
+pub(crate) fn snapshot_of(name: String, transport: &str, capture: Capture) -> Snapshot {
     Snapshot::new(
         ServerInfo {
             name,
