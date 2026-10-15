@@ -107,10 +107,6 @@ pub fn inspect_snapshot(relative_path: &Path, contents: &str) -> Vec<Finding> {
 /// with the `server` name. Otherwise the findings are the ones
 /// [`inspect_snapshot`] reports for the same tools.
 #[must_use]
-#[allow(
-    dead_code,
-    reason = "the remote-inspection orchestrator uses this in a later change"
-)]
 pub(crate) fn check_snapshot_at(
     snapshot: &Snapshot,
     relative_path: &Path,

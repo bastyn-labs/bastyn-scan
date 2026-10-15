@@ -216,10 +216,6 @@ fn https_host(url: &str) -> Option<(Uri, String)> {
 /// True when `url` is an `https` URL whose host is not `localhost` or
 /// `*.localhost` and, if it is an IP literal, is a public address. Syntactic
 /// only: no name is resolved.
-#[allow(
-    dead_code,
-    reason = "the remote-inspection entry point uses this in a later change"
-)]
 pub(crate) fn is_public_https_url(url: &str) -> bool {
     https_host(url).is_some_and(|(_, bare)| bare.parse::<IpAddr>().map_or(true, is_public_ip))
 }

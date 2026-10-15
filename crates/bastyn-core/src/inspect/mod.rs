@@ -14,6 +14,7 @@ mod error;
 pub(crate) mod guard;
 mod http;
 pub(crate) mod jsonrpc;
+pub(crate) mod remote;
 pub mod snapshot;
 pub(crate) mod sse;
 mod stdio;

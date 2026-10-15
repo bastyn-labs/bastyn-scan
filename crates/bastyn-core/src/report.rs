@@ -163,6 +163,44 @@ pub struct Coverage {
     /// same order, with the reason as data.
     #[serde(default)]
     pub skipped: Vec<CoveredSkip>,
+    /// The remote server entries `--inspect-remote` considered, in config
+    /// and entry order. Empty, and omitted from the JSON, unless that option
+    /// ran.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub remote_servers: Vec<RemoteServer>,
+}
+
+/// What happened to one remote server entry during `--inspect-remote`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RemoteStatus {
+    /// The server was contacted and its tools were checked.
+    Inspected,
+    /// The URL is not a public `https` address, so it was not contacted.
+    NotPublic,
+    /// The entry carries headers or a variable placeholder, so it was not
+    /// contacted.
+    NeedsCredentials,
+    /// The entry is not a Streamable HTTP server (a command, or SSE).
+    Unsupported,
+    /// The server was contacted and the capture failed.
+    Unreachable,
+    /// The entry was eligible but `--offline` forbids contacting it.
+    Offline,
+}
+
+/// One server entry considered by `--inspect-remote`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RemoteServer {
+    /// The config file, relative to the scanned root.
+    pub file: String,
+    /// The entry's name in that file.
+    pub server: String,
+    /// What happened to it.
+    pub status: RemoteStatus,
+    /// Number of tools captured; present only when inspected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tools: Option<usize>,
 }
 
 /// The structured form of one [`Report::skipped`] line.
@@ -427,4 +465,58 @@ pub struct Report {
     /// consumer reading this field cannot avoid reading what it does not mean.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub crosswalks: Vec<crate::compliance::Crosswalk>,
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "a failed assumption in a test should fail the test"
+)]
+mod remote_tests {
+    use super::*;
+
+    #[test]
+    fn remote_servers_are_omitted_when_empty() {
+        let value = serde_json::to_value(Coverage::default()).unwrap();
+        assert!(value.get("remote_servers").is_none());
+        let back: Coverage = serde_json::from_value(value).unwrap();
+        assert_eq!(back.remote_servers.len(), 0);
+    }
+
+    #[test]
+    fn a_remote_server_serialises_with_a_snake_case_status() {
+        let coverage = Coverage {
+            remote_servers: vec![RemoteServer {
+                file: "mcp.json".into(),
+                server: "docs".into(),
+                status: RemoteStatus::Inspected,
+                tools: Some(3),
+            }],
+            ..Coverage::default()
+        };
+        let value = serde_json::to_value(&coverage).unwrap();
+        assert_eq!(
+            value["remote_servers"],
+            serde_json::json!([
+                {"file": "mcp.json", "server": "docs", "status": "inspected", "tools": 3}
+            ])
+        );
+        let back: Coverage = serde_json::from_value(value).unwrap();
+        assert_eq!(back, coverage);
+    }
+
+    #[test]
+    fn tools_are_omitted_when_none() {
+        let server = RemoteServer {
+            file: "mcp.json".into(),
+            server: "docs".into(),
+            status: RemoteStatus::NeedsCredentials,
+            tools: None,
+        };
+        let value = serde_json::to_value(&server).unwrap();
+        assert_eq!(
+            value,
+            serde_json::json!({"file": "mcp.json", "server": "docs", "status": "needs_credentials"})
+        );
+    }
 }

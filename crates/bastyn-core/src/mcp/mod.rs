@@ -31,10 +31,6 @@ mod launch;
 pub(crate) mod model;
 mod snapshot_checks;
 
-#[allow(
-    unused_imports,
-    reason = "the remote-inspection orchestrator uses this in a later change"
-)]
 pub(crate) use snapshot_checks::check_snapshot_at;
 pub use snapshot_checks::{inspect_snapshot, is_tools_snapshot};
 
@@ -137,6 +133,20 @@ pub(crate) fn load_server(
             available.join(", ")
         }
     ))
+}
+
+/// Every server entry of a config file, sorted by name. A config that does
+/// not parse yields no entries.
+pub(crate) fn server_entries(
+    relative_path: &Path,
+    contents: &str,
+) -> Vec<(String, model::ServerEntry)> {
+    let Ok(config) = model::parse(model::Format::detect(relative_path), contents) else {
+        return Vec::new();
+    };
+    let mut entries: Vec<(String, model::ServerEntry)> = config.mcp_servers.into_iter().collect();
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+    entries
 }
 
 #[cfg(test)]
