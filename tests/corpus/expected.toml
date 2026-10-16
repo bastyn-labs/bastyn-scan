@@ -1879,3 +1879,16 @@ why      = "The mul tool's description ends in a zero-width space (U+200B), invi
 [[expect_none]]
 file = "clean/ordinary.bastyn-tools.json"
 why  = "A snapshot with an ordinary description, a ZWNJ and a left-to-right mark inside text, an emoji variation selector, and a null description -- none of them hidden-text or instruction phrasing."
+
+[[expect_none]]
+file = "clean/interpreter_shell.py"
+why  = "Shell commands made only of sys.executable and literal text, or of a module-level constant, are closed values and are not reported."
+
+[[expect]]
+file     = "vulnerable/llm10_shell_interpreter_with_parameter.py"
+line     = 11
+rule     = "BAS-LLM10-009"
+category = "LLM10"
+kind     = "defect"
+severity = "critical"
+why      = "The command mixes the fixed interpreter path with a caller-supplied package name, so it is not a closed value."

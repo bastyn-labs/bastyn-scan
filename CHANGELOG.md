@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **`BAS-LLM10-009` no longer reports a shell command made only of literal text, module-level constants and `sys.executable`.** A command with any other non-literal part is reported as before.
+
 ### Added
 
 - **`bastyn scan --inspect-remote` captures the tool lists of the public https MCP servers named in config files, checks them with `BAS-MCP-010` to `-012`, and lists every server it did not contact under Coverage gaps.** It is off by default, `--offline` overrides it, and `--save-snapshots <DIR>` keeps the captures.

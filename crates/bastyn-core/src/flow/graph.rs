@@ -1871,6 +1871,9 @@ impl<'r, D: Doc> Analyzer<'r, D> {
         if let Some(argv) = sys_argv_resolved(node) {
             return argv;
         }
+        if let Some(executable) = sys_executable_resolved(node) {
+            return executable;
+        }
         let attribute_text = node.field("attribute").map(|attr| attr.text().into_owned());
         let closed_here = attribute_text
             .as_deref()
@@ -2370,6 +2373,17 @@ fn is_sys_stdin_expr<D: Doc>(node: &Node<'_, D>) -> bool {
 fn sys_argv_resolved<D: Doc>(node: &Node<'_, D>) -> Option<Resolved> {
     (callee_path(node) == "sys.argv").then(|| Resolved {
         cli_argument: true,
+        ..Resolved::unknown()
+    })
+}
+
+/// `sys.executable` resolved as a closed value, when `node` is written exactly
+/// as that dotted path: the path of the running interpreter, fixed when the
+/// process starts and not supplied by any request or model. Nothing else about
+/// the value is claimed.
+fn sys_executable_resolved<D: Doc>(node: &Node<'_, D>) -> Option<Resolved> {
+    (callee_path(node) == "sys.executable").then(|| Resolved {
+        closed: true,
         ..Resolved::unknown()
     })
 }
@@ -3598,5 +3612,33 @@ def run(opts):
         let (call, arg) = call_and_first_arg(&root, "subprocess.run");
 
         assert!(graph.is_passthrough_observation_eligible(&call, &arg));
+    }
+
+    /// `sys.executable` is the running interpreter's path, so it is closed on
+    /// its own and an f-string built from it and literal text stays closed;
+    /// a segment that is a function parameter keeps the string open.
+    #[test]
+    fn sys_executable_with_literal_text_is_closed() {
+        let source = "\
+import sys
+
+
+def install(package):
+    fixed = f\"{sys.executable} -m pip install requests\"
+    open_one = f\"{sys.executable} -m pip install {package}\"
+    return fixed, open_one
+";
+        let (root, graph) = build_python_graph(source);
+        let tuple = root
+            .root()
+            .dfs()
+            .find(|node| node.kind() == "return_statement")
+            .and_then(|stmt| stmt.named_children().next())
+            .expect("a return statement");
+        let mut names = tuple.named_children();
+        let fixed = names.next().expect("first element");
+        let open_one = names.next().expect("second element");
+        assert!(graph.is_closed(fixed.node_id()));
+        assert!(!graph.is_closed(open_one.node_id()));
     }
 }

@@ -572,8 +572,10 @@ rules:
       by a key already checked for membership, or an OS-generated
       temporary path from tempfile.mkdtemp/gettempdir/mkstemp/
       TemporaryDirectory called with no arguments or only already-safe
-      arguments — is excluded: nothing in it can be attacker-influenced
-      regardless of the identifier's name. Also excluded when every
+      arguments, or a string built only from literal text and
+      sys.executable (the running interpreter's path) — is excluded: nothing
+      in it can be attacker-influenced regardless of the identifier's name.
+      Also excluded when every
       non-literal segment of the command is
       wrapped directly in shlex.quote(...)/shlex.join(...), which makes a
       shell treat it as one argument regardless of content. Also excluded
