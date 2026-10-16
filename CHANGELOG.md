@@ -6,12 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **`BAS-LLM10-009` no longer reports a shell command made only of literal text, module-level constants and `sys.executable`.** A command with any other non-literal part is reported as before.
+
 ### Added
 
 - **`bastyn scan --inspect-remote` captures the tool lists of the public https MCP servers named in config files, checks them with `BAS-MCP-010` to `-012`, and lists every server it did not contact under Coverage gaps.** It is off by default, `--offline` overrides it, and `--save-snapshots <DIR>` keeps the captures.
 
 ### Changed
 
+- **`BAS-SKILL-002` (instruction-override phrasing) is now an observation.** The text alone does not show whether the file tells the agent to follow the phrase or only quotes it. It is shown with `--show-observations` and never fails a run.
+- **`BAS-LLM01-001` (hidden Unicode characters in an instruction file) is now an observation.** The matched characters do not show whether a concealed instruction follows them; a file can list, quote or describe them. The conditions that decide whether to report are unchanged, and the description now asks a reviewer to confirm.
+- **`BAS-ZT4-001` and `BAS-ZT4-002` (user input or a caller-supplied override folded into a system prompt) are now observations.** The matched code does not show where the value comes from. Matching conditions are unchanged.
+- **A rule declared `kind: observation` may now carry a `flow.unproven` clause.** It was previously rejected at load time.
 - **`BAS-LLM10-012` reports a joined or interpolated file path only when a non-literal part of it can be supplied from outside.** A path built only from loop variables, generated names, values read from a local settings file or instance state is no longer reported. A path whose only outside input is a function parameter is an observation unless the function is an agent tool or web route handler, or is called from one in the same file. A path that carries HTTP request data, or a model, tool or retrieval result, is still a defect.
 
 ## [0.6.0] - 2026-10-15

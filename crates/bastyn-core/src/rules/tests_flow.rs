@@ -681,13 +681,14 @@ fn an_unproven_path_without_requires_reports_any_untraceable_value() {
 }
 
 #[test]
-fn unproven_on_an_observation_rule_fails_to_load() {
-    let err =
-        RuleSet::from_yaml(&unproven_rule("observation", UNPROVEN_WITH_REQUIRES)).unwrap_err();
-    assert!(
-        matches!(err, RuleError::UnprovenOnObservation { .. }),
-        "{err}"
+fn unproven_on_an_observation_rule_reports_an_untraceable_value() {
+    let rules = RuleSet::from_yaml(&unproven_rule("observation", UNPROVEN_WITH_REQUIRES)).unwrap();
+    let findings = scan_source(
+        &rules,
+        Path::new("app/run.py"),
+        "def run(response):\n    os.system(response)\n",
     );
+    assert_eq!(only(&findings).kind, crate::finding::Kind::Observation);
 }
 
 #[test]

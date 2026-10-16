@@ -250,7 +250,7 @@ fn a_skills_references_files_are_inspected_and_listed_in_coverage() {
         ("skills/s/assets/logo.png", "not an image"),
     ]);
 
-    let report = json_scan(dir.path(), &[]);
+    let report = json_scan(dir.path(), &["--show-observations"]);
 
     let injections: Vec<&serde_json::Value> = report["findings"]
         .as_array()

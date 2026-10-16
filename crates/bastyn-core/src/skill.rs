@@ -1109,7 +1109,8 @@ fn check_prompt_injection(relative_path: &Path, contents: &str) -> Option<Findin
         } else {
             "Skill file contains instruction-override language".to_owned()
         },
-        kind: Kind::Defect,
+        // Reported as an observation: the match alone does not show a real problem.
+        kind: Kind::Observation,
         severity: Severity::Critical,
         confidence: Confidence::High,
         categories: vec![Category::Llm01],
@@ -1122,8 +1123,9 @@ fn check_prompt_injection(relative_path: &Path, contents: &str) -> Option<Findin
         description: format!(
             "This file contains {count} occurrence(s) of classic instruction-override \
              language, the first being \"{phrase}\". A skill's description and body are both \
-             read by the agent that discovers and invokes it, so this phrasing is a live \
-             prompt-injection surface, not documentation."
+             read by the agent that discovers and invokes it, the text alone does not \
+             show whether the file tells the agent to follow it or only quotes it, so a \
+             reviewer should confirm."
         ),
         remediation: "Remove the instruction-override language. If it is a documented \
                        example of an attack, introduce it with a sentence that says the agent \
@@ -1556,7 +1558,7 @@ mod tests {
             .filter(|finding| finding.rule_id == "BAS-SKILL-002")
             .collect();
         assert_eq!(injection.len(), 1, "{findings:#?}");
-        assert_eq!(injection[0].kind, Kind::Defect);
+        assert_eq!(injection[0].kind, Kind::Observation);
         assert_eq!(injection[0].severity, Severity::Critical);
         assert_eq!(injection[0].confidence, Confidence::High);
         assert_eq!(injection[0].categories, vec![Category::Llm01]);

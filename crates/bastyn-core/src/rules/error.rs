@@ -181,14 +181,6 @@ pub enum RuleError {
         source: RegexMatcherError,
     },
 
-    /// A rule declared `kind: observation` and also `flow.unproven`, which
-    /// only changes what a defect rule reports.
-    #[error("rule `{id}`: `flow.unproven` is only meaningful on a `kind: defect` rule")]
-    UnprovenOnObservation {
-        /// The offending rule's id.
-        id: String,
-    },
-
     /// A field names a metavariable that none of the rule's `any` patterns
     /// binds, so it could never be tested.
     #[error("rule `{id}`: `{field}` names `${var}`, which no `any` pattern binds")]
