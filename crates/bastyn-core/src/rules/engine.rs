@@ -266,6 +266,9 @@ struct CompiledFlow {
     /// an observation instead of being dropped, provided its `requires`
     /// (if any) holds.
     unproven: Option<CompiledUnproven>,
+    /// When set, a value carrying caller input is proven even when no listed
+    /// source produced it. See `crate::flow::graph::FlowGraph::has_input_through_calls`.
+    caller_input: bool,
     /// Drop a match whose callee is a bare name this file rebinds itself.
     builtin_callee: bool,
     /// When true, a match whose captured value is a pure pass-through of a
@@ -300,6 +303,7 @@ impl CompiledFlow {
         };
         match graph.source_kind_of(node_id) {
             Some(kind) if sources.contains(&kind) => FlowVerdict::Proven,
+            _ if self.caller_input && graph.has_input_through_calls(node_id) => FlowVerdict::Proven,
             // An untraced value takes the unproven path when this clause
             // has one; a value traced to a source this rule does not list
             // is known not to be what the rule is about, so it is dropped
@@ -561,6 +565,9 @@ fn compile_flow(def: &RuleDef, any_vars: &HashSet<String>) -> Result<Option<Comp
     // genuinely untested behavior. Rejected here rather than shipped
     // silently; a rule author who actually needs this combination can lift
     // the restriction deliberately later.
+    if sources.is_none() && flow.caller_input {
+        return Err(RuleError::CallerInputWithoutSource { id: def.id.clone() });
+    }
     if sources.is_none() && flow.sink.is_some() {
         return Err(RuleError::FlowSinkWithoutSource { id: def.id.clone() });
     }
@@ -631,6 +638,7 @@ fn compile_flow(def: &RuleDef, any_vars: &HashSet<String>) -> Result<Option<Comp
         unguarded: flow.unguarded,
         sink: flow.sink,
         unproven,
+        caller_input: flow.caller_input,
         builtin_callee: flow.builtin_callee,
         passthrough_downgrade: flow.passthrough_downgrade,
         unreached_parameter_downgrade: flow.unreached_parameter_downgrade,

@@ -11,7 +11,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **`BAS-INFRA-006` (credential in a Dockerfile or Compose file) is now an observation.** The matched code does not show whether the value is a real credential. Severity is unchanged.
 - **`BAS-MCP-002` (MCP server reached over plaintext HTTP without authentication) and `BAS-MCP-005` (MCP server launched from a registry without a version pin) are now observations.** The server configuration alone does not show where the host or the launched package comes from.
 - **`BAS-ZT2-002` (wildcard tool grant) is now an observation.** The matched code does not show where the grant comes from or what the tools can reach.
-- **`BAS-LLM10-011` (`yaml.load` without a safe loader) is now an observation.** The call alone does not show where the loaded text comes from.
 - **`BAS-LLM10-017` (SQL built by interpolation reaches execution) is now an observation.** The matched code does not show where the interpolated value comes from.
 
 These rules still run. Their findings appear with `--show-observations` and never fail a run.
@@ -37,6 +36,8 @@ These rules still run. Their findings appear with `--show-observations` and neve
 - **`BAS-ZT4-001` and `BAS-ZT4-002` (user input or a caller-supplied override folded into a system prompt) are now observations.** The matched code does not show where the value comes from. Matching conditions are unchanged.
 - **A rule declared `kind: observation` may now carry a `flow.unproven` clause.** It was previously rejected at load time.
 - **`BAS-LLM10-012` reports a joined or interpolated file path only when a non-literal part of it can be supplied from outside.** A path built only from loop variables, generated names, values read from a local settings file or instance state is no longer reported. A path whose only outside input is a function parameter is an observation unless the function is an agent tool or web route handler, or is called from one in the same file. A path that carries HTTP request data, or a model, tool or retrieval result, is still a defect.
+- **`BAS-LLM10-004` reports a defect only when the evaluated text traces to input from outside; `BAS-LLM10-011` stays an observation.** That means a function parameter, HTTP request data, a model or tool result or a network read, including a value computed by calls over one of those (`compile(text)`, `text.strip()`). When the text cannot be traced to any of them, for example a loop variable over a dict of literals, the result of a helper that only sees literals, the contents of a fixed file or a value parsed with `ast.parse`, the call is an observation (shown with `--show-observations`). `BAS-LLM10-011` no longer matches `yaml.load` calls that pass a loader as a second positional argument.
+- **`BAS-LLM10-009` no longer reports a command given as a list whose first element is a string literal** (for example `subprocess.run(["start", path], shell=True)`). The remaining list elements are arguments, not shell syntax. A list whose first element is not a literal is still reported.
 
 ## [0.6.0] - 2026-10-15
 

@@ -959,6 +959,86 @@ def run_shell_cmd(cmd):
     assert_eq!(finding.kind, crate::finding::Kind::Defect);
 }
 
+/// A `source:` list with `caller_input: true` and `unproven:`, the shape the
+/// eval/exec and yaml.load rules use.
+const CALLER_INPUT_RULE_YAML: &str = r"
+rules:
+  - id: BAS-FLOW-040
+    title: eval() or exec() run on a non-literal expression
+    kind: defect
+    severity: high
+    confidence: medium
+    categories: [LLM10]
+    language: python
+    any:
+      - eval($ARG)
+      - exec($ARG)
+    flow:
+      variable: ARG
+      source: [network_read]
+      caller_input: true
+      unguarded: true
+      unproven:
+        kind: observation
+    description: eval() runs a non-literal argument.
+    remediation: Do not.
+";
+
+fn caller_input_kind(source: &str) -> Option<crate::finding::Kind> {
+    let ruleset = RuleSet::from_yaml(CALLER_INPUT_RULE_YAML).unwrap();
+    let findings = scan_source(&ruleset, Path::new("app/handler.py"), source);
+    findings
+        .iter()
+        .find(|finding| finding.rule_id == "BAS-FLOW-040")
+        .map(|finding| finding.kind)
+}
+
+/// A parameter, and a value computed by calls over a parameter (as an
+/// argument or as a method receiver), carry caller input.
+#[test]
+fn caller_input_reaches_a_defect_directly_and_through_calls() {
+    for body in [
+        "def run(text):\n    eval(text)\n",
+        "def run(text):\n    eval(text.strip())\n",
+        "def run(text):\n    exec(compile(text, '<s>', 'exec'))\n",
+        "def run(text):\n    cleaned = normalise(text)\n    exec(cleaned)\n",
+        "import requests\n\ndef run(url):\n    exec(requests.get(url).text)\n",
+    ] {
+        assert_eq!(
+            caller_input_kind(body),
+            Some(crate::finding::Kind::Defect),
+            "{body}"
+        );
+    }
+}
+
+/// A value that neither carries caller input nor comes from a listed source
+/// is reported as an observation.
+#[test]
+fn an_untraced_operand_is_an_observation() {
+    for body in [
+        "SCAFFOLDS = {'a': 'x = 1'}\n\ndef run():\n    for name, code in SCAFFOLDS.items():\n        exec(code)\n",
+        "TEMPLATE = 'x = 1'\n\ndef run():\n    source = render(TEMPLATE)\n    exec(source)\n",
+        "import ast\n\ndef run(text):\n    tree = ast.parse(text, mode='eval')\n    eval(compile(tree, '<e>', 'eval'))\n",
+    ] {
+        assert_eq!(
+            caller_input_kind(body),
+            Some(crate::finding::Kind::Observation),
+            "{body}"
+        );
+    }
+}
+
+/// A literal wrapped in `compile` carries no caller input, so it is an
+/// observation rather than a defect.
+#[test]
+fn a_compiled_literal_is_an_observation() {
+    assert_eq!(
+        caller_input_kind("def run():\n    eval(compile('1 + 1', '<s>', 'eval'))\n"),
+        Some(crate::finding::Kind::Observation)
+    );
+}
+
 /// The kind of the `BAS-LLM10-012` finding in `source`, if there is one.
 fn path_open_kind(source: &str) -> Option<crate::finding::Kind> {
     let rules = RuleSet::embedded().unwrap();
@@ -1021,6 +1101,34 @@ def load(name):
     assert_eq!(
         path_open_kind(source),
         Some(crate::finding::Kind::Observation)
+    );
+}
+
+/// `caller_input:` only changes which values count as proven against a
+/// `source:` list; with no list there is nothing for it to change.
+#[test]
+fn caller_input_without_source_fails_to_load() {
+    let yaml = r"
+rules:
+  - id: BAS-FLOW-041
+    title: eval() or exec() run on a non-literal expression
+    kind: defect
+    severity: high
+    confidence: medium
+    categories: [LLM10]
+    language: python
+    any:
+      - eval($ARG)
+    flow:
+      variable: ARG
+      caller_input: true
+    description: eval() runs a non-literal argument.
+    remediation: Do not.
+";
+    let error = RuleSet::from_yaml(yaml).unwrap_err();
+    assert!(
+        matches!(error, RuleError::CallerInputWithoutSource { .. }),
+        "{error:?}"
     );
 }
 

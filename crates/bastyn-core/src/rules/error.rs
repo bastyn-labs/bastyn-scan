@@ -262,6 +262,16 @@ pub enum RuleError {
         id: String,
     },
 
+    /// A rule declared `flow.caller_input` with no `flow.source`.
+    ///
+    /// With no `source:` every value that is neither closed nor guarded is
+    /// already proven, so the flag would change nothing.
+    #[error("rule `{id}`: `flow.caller_input` requires `flow.source`")]
+    CallerInputWithoutSource {
+        /// The offending rule's id.
+        id: String,
+    },
+
     /// A rule declared both `flow.sink` and `flow.passthrough_downgrade`.
     ///
     /// The wrapper-sink pass (`flow.sink`) builds its own findings straight

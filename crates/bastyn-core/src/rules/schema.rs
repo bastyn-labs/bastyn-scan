@@ -250,6 +250,16 @@ pub(crate) struct FlowDef {
     /// be what the rule is about.
     #[serde(default)]
     pub(crate) unproven: Option<UnprovenDef>,
+    /// Also treat a value that carries caller input as proven, even when no
+    /// listed `source:` produced it. Caller input is a function parameter
+    /// (other than `self`/`cls` or a command-line parameter), HTTP request
+    /// data, or the result of a catalogued model, tool or retrieval call; a
+    /// value computed by calls over such input, with the input as an
+    /// argument or receiver, carries it too (except through `ast.parse`).
+    /// A value that carries neither a listed source nor caller input still
+    /// takes the `unproven:` path. Requires `source:`.
+    #[serde(default)]
+    pub(crate) caller_input: bool,
     /// Drop a match whose callee is a bare name this file binds itself (a
     /// local `def eval`, an `import ... as eval`), so a rule about a Python
     /// builtin only ever reports the builtin.

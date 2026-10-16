@@ -253,27 +253,36 @@ rules:
     # default) is unambiguous and CVE-documented independent of this
     # corpus's specific contents.
     any:
-      - yaml.load($$$A, Loader=yaml.UnsafeLoader, $$$B)
-      - yaml.load($$$A, Loader=yaml.UnsafeLoader)
-      - yaml.load(Loader=yaml.UnsafeLoader, $$$B)
-      - yaml.load(Loader=yaml.UnsafeLoader)
-      - yaml.load($$$A, Loader=UnsafeLoader, $$$B)
-      - yaml.load($$$A, Loader=UnsafeLoader)
-      - yaml.load(Loader=UnsafeLoader, $$$B)
-      - yaml.load(Loader=UnsafeLoader)
-      - yaml.load($$$A, Loader=$L, $$$B)
-      - yaml.load($$$A, Loader=$L)
-      - yaml.load(Loader=$L, $$$B)
-      - yaml.load(Loader=$L)
-      - yaml.load($$$A)
+      - yaml.load($DATA, Loader=yaml.UnsafeLoader, $$$B)
+      - yaml.load($DATA, Loader=yaml.UnsafeLoader)
+      - yaml.load($DATA, Loader=UnsafeLoader, $$$B)
+      - yaml.load($DATA, Loader=UnsafeLoader)
+      - yaml.load($DATA, Loader=$L, $$$B)
+      - yaml.load($DATA, Loader=$L)
+      - yaml.load($DATA)
+    # Provenance gate. The parsed text is a defect when it traces to input
+    # this file does not control: a catalogued source (model output, request
+    # data, retrieved context, tool output, a file or network read) or caller
+    # input (a function parameter, request data, a model or tool result,
+    # including through calls over such values). Text whose origin the flow
+    # graph cannot trace to either is reported as an observation. A literal
+    # is not reported. The call must also pass the text as its first
+    # positional argument, which is the only form the patterns above bind.
+    flow:
+      variable: DATA
+      source: [model_output, http_request, retrieved_context, tool_output, network_read]
+      caller_input: true
+      unproven:
+        kind: observation
     metavariable_not_matches:
       L: "(?i)safe"
     description: >
-      yaml.load() is called with the default (unsafe) loader instead of
-      yaml.safe_load() or an explicit Loader=yaml.SafeLoader. PyYAML's
-      unsafe loaders can invoke arbitrary Python callables via tags like
-      !python/object/apply at parse time, regardless of where the YAML
-      text came from.
+      yaml.load() parses text that traces to external input with the default
+      (unsafe) loader instead of yaml.safe_load() or an explicit
+      Loader=yaml.SafeLoader. PyYAML's unsafe loaders can invoke arbitrary
+      Python callables via tags like !python/object/apply at parse time.
+      When the origin of the text cannot be traced within the file, the call
+      is reported as an observation instead.
     remediation: >
       Use yaml.safe_load() (or yaml.load(data, Loader=yaml.SafeLoader))
       unless the YAML genuinely encodes Python objects the app must

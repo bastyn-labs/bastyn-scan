@@ -174,9 +174,20 @@ pub(crate) struct Resolved {
     /// HTTP request data, or the result of a catalogued model, tool or
     /// retrieval call. Unlike the other facts this is an OR across
     /// segments, because one caller-supplied segment is enough to make the
-    /// whole path caller-influenced. Consumed by an `exclude_if:
-    /// no_caller_input` rule clause (`BAS-LLM10-012`).
+    /// whole value caller-influenced. Consumed by an `exclude_if:
+    /// no_caller_input` rule clause (`BAS-LLM10-012`) and by a flow clause's
+    /// `caller_input: true` (together with [`Resolved::through_calls`]).
     pub(crate) caller_input: bool,
+    /// Whether this value is the result of a call with an argument or a
+    /// receiver that carries caller input, however many calls away. Unlike
+    /// [`Resolved::caller_input`], which stops at a call to anything outside
+    /// a short whitelist, this follows the value through any call, because
+    /// the result of `f(x)` or `x.method()` is shaped by `x`. A call to
+    /// `ast.parse` does not carry it: its result is a syntax tree, which is
+    /// typically checked before it is evaluated. Consumed by a flow clause's
+    /// `caller_input: true`; always false for a value with no call in its
+    /// derivation.
+    pub(crate) through_calls: bool,
     /// The part of [`Resolved::caller_input`] that does not depend on who
     /// calls an enclosing function: at least one non-literal segment is HTTP
     /// request data or the result of a catalogued model, tool or retrieval
@@ -194,6 +205,7 @@ impl Resolved {
             stdin_dispatch: false,
             cli_argument: false,
             caller_input: false,
+            through_calls: false,
             remote_input: false,
         }
     }
@@ -207,6 +219,7 @@ impl Resolved {
             stdin_dispatch: true,
             cli_argument: true,
             caller_input: false,
+            through_calls: false,
             remote_input: false,
         }
     }
@@ -220,6 +233,7 @@ impl Resolved {
             stdin_dispatch: self.stdin_dispatch && other.stdin_dispatch,
             cli_argument: self.cli_argument && other.cli_argument,
             caller_input: self.caller_input || other.caller_input,
+            through_calls: self.through_calls || other.through_calls,
             remote_input: self.remote_input || other.remote_input,
         }
     }
@@ -365,6 +379,16 @@ impl FlowGraph {
         self.resolved
             .get(&node_id)
             .is_some_and(|resolved| resolved.cli_argument)
+    }
+
+    /// Whether the value at `node_id` carries caller input (see
+    /// [`Resolved::caller_input`]), or is the result of a call with an
+    /// argument or receiver that does (see [`Resolved::through_calls`]).
+    /// `false` for a node the graph did not examine.
+    pub(crate) fn has_input_through_calls(&self, node_id: usize) -> bool {
+        self.resolved
+            .get(&node_id)
+            .is_some_and(|resolved| resolved.caller_input || resolved.through_calls)
     }
 
     /// Whether the value at `node_id` has at least one non-literal segment
@@ -1668,6 +1692,7 @@ impl<'r, D: Doc> Analyzer<'r, D> {
                             // `self`/`cls` carry state set elsewhere in the
                             // class, not a value a caller passes in.
                             caller_input,
+                            through_calls: false,
                             remote_input: false,
                         }),
                         scope: inner,
@@ -2124,6 +2149,7 @@ impl<'r, D: Doc> Analyzer<'r, D> {
                         })
                 }));
         let (caller_input, remote_input) = self.call_caller_input(node, scope, depth, &callee);
+        let through_calls = callee != "ast.parse" && self.call_carries_input(node, scope, depth);
         Resolved {
             closed: callee == "type"
                 || self.tempfile_args_safe(node, scope, depth, callee.as_str(), |resolved| {
@@ -2135,6 +2161,7 @@ impl<'r, D: Doc> Analyzer<'r, D> {
             stdin_dispatch,
             cli_argument,
             caller_input,
+            through_calls,
             remote_input,
             prov: Prov::Call { callee },
         }
@@ -2181,6 +2208,32 @@ impl<'r, D: Doc> Analyzer<'r, D> {
             }
         }
         (caller_input, remote_input)
+    }
+
+    /// Whether any argument of the call, or its receiver when it is a method
+    /// call, carries caller input directly or through earlier calls.
+    fn call_carries_input(&mut self, node: &Node<'r, D>, scope: usize, depth: usize) -> bool {
+        let mut operands: Vec<Node<'r, D>> = Vec::new();
+        if let Some(function) = node.field("function")
+            && function.kind() == "attribute"
+            && let Some(object) = function.field("object")
+        {
+            operands.push(object);
+        }
+        if let Some(arguments) = node.field("arguments") {
+            for argument in arguments.named_children() {
+                let value = if argument.kind() == "keyword_argument" {
+                    argument.field("value")
+                } else {
+                    Some(argument)
+                };
+                operands.extend(value);
+            }
+        }
+        operands.iter().any(|operand| {
+            let resolved = self.resolve(operand, scope, depth + 1);
+            resolved.caller_input || resolved.through_calls
+        })
     }
 
     /// `<receiver>.parse_args()` / `.parse_known_args()` where the receiver
@@ -2433,6 +2486,7 @@ impl<'r, D: Doc> Analyzer<'r, D> {
                     stdin_dispatch: previous.stdin_dispatch && resolved.stdin_dispatch,
                     cli_argument: previous.cli_argument && resolved.cli_argument,
                     caller_input: previous.caller_input || resolved.caller_input,
+                    through_calls: previous.through_calls || resolved.through_calls,
                     remote_input: previous.remote_input || resolved.remote_input,
                 },
                 Some(previous) => Resolved {
@@ -2443,6 +2497,7 @@ impl<'r, D: Doc> Analyzer<'r, D> {
                     stdin_dispatch: previous.stdin_dispatch && resolved.stdin_dispatch,
                     cli_argument: previous.cli_argument && resolved.cli_argument,
                     caller_input: previous.caller_input || resolved.caller_input,
+                    through_calls: previous.through_calls || resolved.through_calls,
                     remote_input: previous.remote_input || resolved.remote_input,
                 },
             });

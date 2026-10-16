@@ -442,6 +442,30 @@ rules:
       - subprocess.Popen('$LIT', shell=True)
       - subprocess.Popen("$LIT", shell=True, $$$REST)
       - subprocess.Popen('$LIT', shell=True, $$$REST)
+    # A command given as a list whose first element is a literal runs only that
+    # fixed program through the shell; the remaining elements are passed as its
+    # arguments rather than parsed as shell syntax, so the list form is not a
+    # composed command line.
+      - subprocess.run(["$LIT", $$$ITEMS], shell=True)
+      - subprocess.run(["$LIT", $$$ITEMS], shell=True, $$$REST)
+      - subprocess.run(['$LIT', $$$ITEMS], shell=True)
+      - subprocess.run(['$LIT', $$$ITEMS], shell=True, $$$REST)
+      - subprocess.call(["$LIT", $$$ITEMS], shell=True)
+      - subprocess.call(["$LIT", $$$ITEMS], shell=True, $$$REST)
+      - subprocess.call(['$LIT', $$$ITEMS], shell=True)
+      - subprocess.call(['$LIT', $$$ITEMS], shell=True, $$$REST)
+      - subprocess.check_call(["$LIT", $$$ITEMS], shell=True)
+      - subprocess.check_call(["$LIT", $$$ITEMS], shell=True, $$$REST)
+      - subprocess.check_call(['$LIT', $$$ITEMS], shell=True)
+      - subprocess.check_call(['$LIT', $$$ITEMS], shell=True, $$$REST)
+      - subprocess.check_output(["$LIT", $$$ITEMS], shell=True)
+      - subprocess.check_output(["$LIT", $$$ITEMS], shell=True, $$$REST)
+      - subprocess.check_output(['$LIT', $$$ITEMS], shell=True)
+      - subprocess.check_output(['$LIT', $$$ITEMS], shell=True, $$$REST)
+      - subprocess.Popen(["$LIT", $$$ITEMS], shell=True)
+      - subprocess.Popen(["$LIT", $$$ITEMS], shell=True, $$$REST)
+      - subprocess.Popen(['$LIT', $$$ITEMS], shell=True)
+      - subprocess.Popen(['$LIT', $$$ITEMS], shell=True, $$$REST)
     # stdin_dispatch excludes a command whose entire non-literal content
     # traces to an unprocessed sys.stdin read -- the hook/skill-runner
     # control-channel shape (sys.stdin.read(), json.load(sys.stdin),
@@ -1366,20 +1390,35 @@ rules:
     # correctly report as defects instead of hidden observations (a third
     # fixture, eval_on_untraceable_parameter.py, was added for this change
     # and never had prior behavior of its own).
+    #
+    # Provenance gate (supersedes the unconditional reporting described
+    # above). The evaluated operand is a defect only when it traces to input
+    # this file does not control: a catalogued source (model output, request
+    # data, retrieved context, tool output, a network read) or caller input
+    # (a function parameter, request data, a model or tool result), including
+    # through calls over such values (compile(text), text.strip(),
+    # read_text(path) with a parameter path). An operand whose origin the flow
+    # graph cannot trace to either -- a loop variable over file-defined
+    # values, the result of a local helper that works only on literals, the
+    # contents of a fixed file, a value parsed with ast.parse -- is reported
+    # as an observation instead. A bare parameter stays a defect, which
+    # tests/corpus/vulnerable/real_misses/eval_on_untraceable_parameter.py
+    # asserts.
     flow:
       variable: ARG
+      source: [model_output, http_request, retrieved_context, tool_output, network_read]
+      caller_input: true
       unguarded: true
       builtin_callee: true
+      unproven:
+        kind: observation
     description: >
-      eval()/exec() is called with an argument that is not a string literal.
-      Whatever produced this value, running it is arbitrary code execution
-      the moment its contents are attacker-influenceable, and there is no way
-      to prove from the repository alone that they never are. This is
-      reported unconditionally, the same way a non-literal command reaching a
-      shell (BAS-LLM10-009) is: a check the flow graph can prove closes over
-      fixed literals, or a guard that already dominates the call, still drops
-      the match, but an untraceable origin is now a full defect rather than a
-      hidden, low-confidence observation.
+      eval()/exec() is called with an argument that is not a string literal
+      and that traces to external input: a function parameter, request data,
+      a model or tool result, or a network read. Running it is
+      arbitrary code execution the moment its contents are
+      attacker-influenceable. When the origin cannot be traced within the
+      file, the call is reported as an observation instead.
     remediation: >
       Never run eval()/exec() on anything other than a fixed literal. If the
       agent needs to run model-suggested logic, parse it into a constrained,
