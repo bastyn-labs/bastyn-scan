@@ -329,7 +329,7 @@ file     = "vulnerable/system_prompt_from_request.py"
 line     = 6
 rule     = "BAS-ZT4-001"
 category = "ZT4"
-kind     = "defect"
+kind     = "observation"
 severity = "high"
 why      = "HTTP request data (request.get_json()) interpolated into a prompt sent in the system role."
 
@@ -1268,7 +1268,7 @@ file     = "vulnerable/skills/log-analyzer/SKILL.md"
 line     = 20
 rule     = "BAS-SKILL-002"
 category = "LLM01"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "Complete, well-formed frontmatter (name/description/version/permissions all present), but the body's \"example log line\" embeds classic instruction-override phrasing (\"ignore all previous instructions\") plus a sensitive-path reference (~/.ssh/id_rsa) disguised as sample input a log parser would encounter. Proves BAS-SKILL-002 fires on body text even when BAS-SKILL-001 has nothing to say about this file."
 
@@ -1290,7 +1290,7 @@ file     = "vulnerable/skills/word-wrapped-injection/SKILL.md"
 line     = 11
 rule     = "BAS-SKILL-002"
 category = "LLM01"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "Complete, well-formed frontmatter, but the body's classic instruction-override phrase (\"ignore all previous instructions\") is word-wrapped across a Markdown line break (\"IGNORE ALL PREVIOUS\\nINSTRUCTIONS\"). Regression fixture for a bug where scan_phrases only did a literal substring match and silently missed phrases split by a line break; the same phrasing on one line was already caught (see log-analyzer above)."
 

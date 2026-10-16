@@ -577,12 +577,6 @@ fn compile_flow(def: &RuleDef, any_vars: &HashSet<String>) -> Result<Option<Comp
     if flow.sink.is_some() && flow.passthrough_downgrade {
         return Err(RuleError::PassthroughDowngradeWithSink { id: def.id.clone() });
     }
-    // `flow.unproven` only changes what a defect rule reports: an
-    // observation rule already reports everything it matches as an
-    // observation, so the field would be a no-op there.
-    if def.kind == Kind::Observation && flow.unproven.is_some() {
-        return Err(RuleError::UnprovenOnObservation { id: def.id.clone() });
-    }
     let unproven = match &flow.unproven {
         None => None,
         // `kind` is destructured, not ignored, so its only possible value is

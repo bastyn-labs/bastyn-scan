@@ -999,7 +999,8 @@ rules:
 
   - id: BAS-ZT4-001
     title: Raw user input folded directly into a system prompt
-    kind: defect
+    kind: observation
+    # Reported as an observation: the match alone does not show a real problem.
     severity: high
     confidence: high
     categories: [LLM01, ZT4]
@@ -1366,7 +1367,8 @@ rules:
 
   - id: BAS-ZT4-002
     title: System prompt built from a caller-supplied override
-    kind: defect
+    kind: observation
+    # Reported as an observation: the match alone does not show a real problem.
     severity: high
     confidence: high
     categories: [LLM01, ZT4]
