@@ -468,13 +468,10 @@ fn analyse_file(
     let skill_reference = skill::is_skill_reference(relative, skill_dirs);
     let skill_script = skill::is_skill_script(relative, skill_dirs);
     let env_file = dotenv::is_env_file(relative);
+    let claimed_by_analyser =
+        mcp_config || tools_snapshot || manifest || infra_file || instruction_file || skill_file;
     if source_language.is_none()
-        && !mcp_config
-        && !tools_snapshot
-        && !manifest
-        && !infra_file
-        && !instruction_file
-        && !skill_file
+        && !claimed_by_analyser
         && !skill_reference
         && !skill_script
         && !env_file
@@ -493,13 +490,7 @@ fn analyse_file(
     if let Some(found) = &generated {
         out.skipped
             .push(Skip::generated(display_path(relative), found.measurement()));
-        if !mcp_config
-            && !tools_snapshot
-            && !manifest
-            && !infra_file
-            && !instruction_file
-            && !skill_file
-        {
+        if !claimed_by_analyser {
             // Nothing else claims this file, so there is nothing left to read
             // it for. The usual case: `no_source_extension_is_claimed_by_
             // another_analyser` records the two names that are the exception.
