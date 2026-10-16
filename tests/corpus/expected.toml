@@ -97,7 +97,7 @@ file     = "vulnerable/llm10_eval_on_model_reply.py"
 line     = 59
 rule     = "BAS-LLM10-017"
 category = "LLM10"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "The f-string interpolates both a traced model reply and an untraced parameter directly into raw SQL, with neither bound as a query parameter -- an unconditional SQL-injection shape regardless of provenance, exactly BAS-LLM10-017's designed scope (the same unconditional-composition philosophy BAS-LLM10-009 applies to shell commands: it reports the composition itself, independent of whatever precedes or feeds it). BAS-LLM10-003's mixed-origin downgrade to an observation exists for cases where provenance can't be established and that absence matters for calibrating confidence; here it doesn't need to, since parameterization is the correct fix regardless of source. BAS-LLM10-003 still fires and is preserved as a secondary_rule_ids entry on this finding, so nothing is silently lost -- it just isn't the top-level displayed finding at this line."
 
@@ -239,7 +239,7 @@ file     = "vulnerable/llm10_unparameterized_sql_tool.py"
 line     = 9
 rule     = "BAS-LLM10-017"
 category = "LLM10"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "the query is f-string interpolated directly into execute(), with no variable-name gate needed."
 
@@ -266,7 +266,7 @@ file     = "vulnerable/llm10_unparameterized_sql_tool.py"
 line     = 53
 rule     = "BAS-LLM10-017"
 category = "LLM10"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "find_ticket_by_customer(): customer_email is interpolated as a query *value* into a WHERE clause, not a schema identifier -- the 2026-09-24 metavariable_not_matches DDL-keyword exclusion (added to fix all 4 BAS-LLM10-017 report false positives, all PRAGMA table_info(...)/ALTER TABLE ... ADD COLUMN ... identifier interpolation) only excludes an f-string that opens with PRAGMA/ALTER TABLE/CREATE TABLE/DROP TABLE/CREATE INDEX/DROP INDEX, and this f-string opens with SELECT, so it must still fire -- proving the exclusion does not over-broadly swallow real injections."
 
@@ -275,7 +275,7 @@ file     = "vulnerable/llm10_unparameterized_sql_tool.py"
 line     = 65
 rule     = "BAS-LLM10-017"
 category = "LLM10"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "materialize_filtered_table(): opens with CREATE TABLE, but also interpolates user_filter as a real query value (quoted with the opposite quote character) in a WHERE clause appended to the DDL. Regression fixture for a 2026-09-24 final-review finding: the DDL exclusion originally checked only the opening keyword, not whether a quoted value literal appeared anywhere in the rest of the string, so this was wrongly excluded before the exclusion regex was tightened to require the whole remainder be quote-free."
 
@@ -284,7 +284,7 @@ file     = "vulnerable/llm10_unparameterized_sql_tool.py"
 line     = 73
 rule     = "BAS-LLM10-017"
 category = "LLM10"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "add_column_with_default(): opens with ALTER TABLE, but DEFAULT '{user_filter}' interpolates a real query value, not a schema identifier -- the ADD COLUMN counterpart to materialize_filtered_table() above, same 2026-09-24 regression and same tightened exclusion."
 
@@ -728,7 +728,7 @@ file     = "vulnerable/zt3_container_boundary/Dockerfile"
 line     = 14
 rule     = "BAS-INFRA-006"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "high"
 why      = "ENV DB_PASSWORD=Sup3rWeakPass! is a hardcoded credential, not shaped like a provider key -- BAS-INFRA-002's `sk-`-shaped gate does not cover it, and the two rules must not double-report the same literal. Reported high, not critical: credential_severity() rates a value that is neither high-entropy nor named for a cloud provider as high."
 
@@ -782,7 +782,7 @@ file     = "vulnerable/zt3_container_boundary/docker-compose.yml"
 line     = 11
 rule     = "BAS-INFRA-006"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "high"
 why      = "MYSQL_PASSWORD=password in the list form of environment: is a real weak default. Reported high, not critical: credential_severity() rates a value that is neither high-entropy nor named for a cloud provider as high."
 
@@ -791,7 +791,7 @@ file     = "vulnerable/zt3_container_boundary/docker-compose.yml"
 line     = 12
 rule     = "BAS-INFRA-006"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "SERVICE_TOKEN=svc_4f8a1c62d90b47e3a5216fbc8de07394 -- a hardcoded token that does not match any vendor-specific key shape (BAS-ZT1-003's `sk-` gate), caught here because the generic check gates on the credential-shaped variable name, not the value's own shape."
 
@@ -800,7 +800,7 @@ file     = "vulnerable/zt3_container_boundary/docker-compose.yml"
 line     = 18
 rule     = "BAS-INFRA-006"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "high"
 why      = "MYSQL_ROOT_PASSWORD: 'aa123456' in the mapping form of environment: -- format parity with the list-form findings above. MYSQL_DATABASE on the line below must not be flagged. Reported high, not critical: credential_severity() rates a value that is neither high-entropy nor named for a cloud provider as high."
 
@@ -813,7 +813,7 @@ file     = "mcp/streamable_http/mcp.json"
 line     = 4
 rule     = "BAS-MCP-002"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "high"
 why      = "The opsbot-metrics server is reached over plain http:// with no Authorization/token/key in headers or env."
 
@@ -835,7 +835,7 @@ file     = "mcp/stdio_two/mcp.json"
 line     = 5
 rule     = "BAS-MCP-005"
 category = "LLM04"
-kind     = "defect"
+kind     = "observation"
 severity = "high"
 why      = "The opsbot-logs server is launched from a package registry (npx -y / uvx) with no version pin, so what runs can change without a change to this repository."
 
@@ -844,7 +844,7 @@ file     = "mcp/stdio_two/mcp.json"
 line     = 9
 rule     = "BAS-MCP-005"
 category = "LLM04"
-kind     = "defect"
+kind     = "observation"
 severity = "high"
 why      = "The opsbot-runbooks server is launched from a package registry (npx -y / uvx) with no version pin, so what runs can change without a change to this repository."
 
@@ -862,7 +862,7 @@ file     = "mcp/stdio_two/mcp.yaml"
 line     = 6
 rule     = "BAS-MCP-005"
 category = "LLM04"
-kind     = "defect"
+kind     = "observation"
 severity = "high"
 why      = "The opsbot-logs server is launched from a package registry (npx -y / uvx) with no version pin, so what runs can change without a change to this repository."
 
@@ -871,7 +871,7 @@ file     = "mcp/stdio_two/mcp.yaml"
 line     = 11
 rule     = "BAS-MCP-005"
 category = "LLM04"
-kind     = "defect"
+kind     = "observation"
 severity = "high"
 why      = "The opsbot-runbooks server is launched from a package registry (npx -y / uvx) with no version pin, so what runs can change without a change to this repository."
 
@@ -889,7 +889,7 @@ file     = "mcp/stdio_two/mcp.toml"
 line     = 3
 rule     = "BAS-MCP-005"
 category = "LLM04"
-kind     = "defect"
+kind     = "observation"
 severity = "high"
 why      = "The opsbot-logs server is launched from a package registry (npx -y / uvx) with no version pin, so what runs can change without a change to this repository."
 
@@ -898,7 +898,7 @@ file     = "mcp/stdio_two/mcp.toml"
 line     = 7
 rule     = "BAS-MCP-005"
 category = "LLM04"
-kind     = "defect"
+kind     = "observation"
 severity = "high"
 why      = "The opsbot-runbooks server is launched from a package registry (npx -y / uvx) with no version pin, so what runs can change without a change to this repository."
 
@@ -1044,7 +1044,7 @@ file     = "vulnerable/zt3_isolation/mcp.json"
 line     = 5
 rule     = "BAS-MCP-005"
 category = "LLM04"
-kind     = "defect"
+kind     = "observation"
 severity = "high"
 why      = "An MCP server launched via npx with no version pin resolves to whatever the registry serves at run time, inside the agent's trust boundary."
 
@@ -1218,7 +1218,7 @@ file     = "vulnerable/zt2_wildcard_tool_grant.ts"
 line     = 30
 rule     = "BAS-ZT2-002"
 category = "ZT2"
-kind     = "defect"
+kind     = "observation"
 severity = "high"
 why      = "buildOpsbotAgent() calls selectToolsForAgent(ALL_TOOLS, \"*\") -- OpsBot's own internal tool-scoping layer -- with the wildcard grant, positionally rather than as a named allowedTools= keyword argument, which is the ordinary call shape in TS/JS and a further structural difference from the Python rule's named-kwarg pattern. Promoted from known_gap on 2026-08-28: BAS-ZT2-002 gates on the called function's own name (tool|agent-shaped) rather than the grant value's name, which is what let it close this gap without the false-positive blowup an ungated `$FN($$$PRE, \"*\")` produced across 65 real repositories (CORS headers, glob patterns, route wildcards)."
 
@@ -1737,7 +1737,7 @@ file     = "mcp/shell_wrapper/mcp.json"
 line     = 5
 rule     = "BAS-MCP-005"
 category = "LLM04"
-kind     = "defect"
+kind     = "observation"
 severity = "high"
 why      = "The same inner npx launch has no version pin."
 

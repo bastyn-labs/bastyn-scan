@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **`BAS-INFRA-006` (credential in a Dockerfile or Compose file) is now an observation.** The matched code does not show whether the value is a real credential. Severity is unchanged.
+- **`BAS-MCP-002` (MCP server reached over plaintext HTTP without authentication) and `BAS-MCP-005` (MCP server launched from a registry without a version pin) are now observations.** The server configuration alone does not show where the host or the launched package comes from.
+- **`BAS-ZT2-002` (wildcard tool grant) is now an observation.** The matched code does not show where the grant comes from or what the tools can reach.
+- **`BAS-LLM10-011` (`yaml.load` without a safe loader) is now an observation.** The call alone does not show where the loaded text comes from.
+- **`BAS-LLM10-017` (SQL built by interpolation reaches execution) is now an observation.** The matched code does not show where the interpolated value comes from.
+
+These rules still run. Their findings appear with `--show-observations` and never fail a run.
+
 ### Added
 
 - **`bastyn scan --inspect-remote` captures the tool lists of the public https MCP servers named in config files, checks them with `BAS-MCP-010` to `-012`, and lists every server it did not contact under Coverage gaps.** It is off by default, `--offline` overrides it, and `--save-snapshots <DIR>` keeps the captures.

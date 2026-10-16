@@ -789,7 +789,8 @@ rules:
 
   - id: BAS-LLM10-017
     title: Unparameterized query built by interpolation reaches SQL execution
-    kind: defect
+    kind: observation
+    # Reported as an observation: the match alone does not show a real problem.
     severity: critical
     confidence: high
     categories: [LLM10]
@@ -1969,7 +1970,8 @@ rules:
 
   - id: BAS-ZT2-002
     title: Wildcard tool grant in agent-construction code (JS)
-    kind: defect
+    kind: observation
+    # Reported as an observation: the match alone does not show a real problem.
     severity: high
     confidence: high
     categories: [ZT2]

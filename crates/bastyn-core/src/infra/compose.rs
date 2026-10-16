@@ -273,7 +273,8 @@ fn check_environment_credentials(
             Finding {
                 rule_id: "BAS-INFRA-006".to_owned(),
                 title: "Hardcoded credential in deployment configuration".to_owned(),
-                kind: Kind::Defect,
+                // Reported as an observation: the match alone does not show a real problem.
+                kind: Kind::Observation,
                 severity: credential::credential_severity(&key, &value),
                 confidence: Confidence::High,
                 categories: vec![Category::Zt1],
@@ -536,7 +537,7 @@ mod tests {
     }
 
     #[test]
-    fn a_hardcoded_weak_password_in_the_list_form_is_a_defect() {
+    fn a_hardcoded_weak_password_in_the_list_form_is_an_observation() {
         // Verbatim shape from the head-to-head benchmark against a Python
         // prototype: a real docker-compose file shipping default MySQL
         // credentials.
@@ -546,7 +547,7 @@ mod tests {
 
         assert_eq!(findings.len(), 1, "{findings:#?}");
         assert_eq!(findings[0].rule_id, "BAS-INFRA-006");
-        assert_eq!(findings[0].kind, Kind::Defect);
+        assert_eq!(findings[0].kind, Kind::Observation);
         assert_eq!(findings[0].categories, vec![Category::Zt1]);
         assert_eq!(findings[0].location.line, 5);
     }

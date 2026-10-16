@@ -1211,7 +1211,13 @@ fn mcp_misconfiguration_is_found_in_json_yaml_and_toml() {
         let dir = tree(&[(name, contents)]);
         let stdout = stdout_of({
             let mut c = bastyn(dir.path());
-            c.args(["scan", "--offline", "--format", "json"]);
+            c.args([
+                "scan",
+                "--offline",
+                "--format",
+                "json",
+                "--show-observations",
+            ]);
             c
         });
         let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
