@@ -96,7 +96,7 @@ pub(crate) fn is_env_file(path: &Path) -> bool {
 /// `.env.local.example` (remainder `"local.example"`) fell through and was
 /// scanned as a genuine `.env` file — the false-positive this function
 /// exists to prevent.
-fn placeholder_suffix(path: &Path) -> bool {
+pub(crate) fn placeholder_suffix(path: &Path) -> bool {
     let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
         return false;
     };

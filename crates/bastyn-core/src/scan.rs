@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
 
+use crate::category::Category;
 use crate::cve::{self, Dependency, UnresolvedDependency};
 use crate::dotenv;
 use crate::error::{Error, Result};
@@ -19,6 +20,7 @@ use crate::inspect::{Limits, remote};
 use crate::instructions;
 use crate::mcp;
 use crate::observe::{Observer, Phase, Silent};
+use crate::provider_token;
 use crate::report::{Coverage, CoveredSkip, CveStatus, Report, Skip, Summary};
 use crate::rules::{RuleSet, ScanOutcome, SourceLanguage, scan_source_checked};
 use crate::skill;
@@ -614,11 +616,38 @@ fn analyse_file(
         out.findings.extend(dotenv::inspect(relative, &contents));
     }
 
+    add_provider_tokens(relative, &contents, generated.is_some(), env_file, &mut out);
+
     if manifest {
         collect_dependencies(relative, &contents, &mut out);
     }
 
     Some(out)
+}
+
+/// Add `BAS-ZT1-023` findings for any text file read above.
+///
+/// A generated bundle and a documentation-only `.env.example` are not
+/// searched, and a line another credential check already reported is not
+/// reported twice.
+fn add_provider_tokens(
+    relative: &Path,
+    contents: &str,
+    generated: bool,
+    env_file: bool,
+    out: &mut FileAnalysis,
+) {
+    if generated || (env_file && dotenv::placeholder_suffix(relative)) {
+        return;
+    }
+    let reported: Vec<usize> = out
+        .findings
+        .iter()
+        .filter(|finding| finding.categories.contains(&Category::Zt1))
+        .map(|finding| finding.location.line)
+        .collect();
+    out.findings
+        .extend(provider_token::inspect(relative, contents, &reported));
 }
 
 /// Parse one dependency manifest into the pending CVE query.
@@ -786,6 +815,39 @@ mod tests {
             ".env must be counted as scanned, not silently skipped"
         );
         assert!(report.skipped.is_empty(), "{:#?}", report.skipped);
+    }
+
+    /// A provider token literal is reported from any file the scan reads as
+    /// text, once per line, and a documentation-only `.env.example` stays
+    /// silent.
+    #[test]
+    fn provider_tokens_are_reported_once_per_line_across_file_kinds() {
+        let token = ["np", "m_", "q8Zr4KdNw2Vb7LmT5hYc", "J3xPf9GaR6sU1eHo"].concat();
+        let dir = tree(&[
+            ("AGENTS.md", &format!("Publish with {token} for now.\n")),
+            ("app.py", &format!("api_token = \"{token}\"\n")),
+            ("tools.py", &format!("LOGIN = \"{token}\"\n")),
+            (".env.example", &format!("REGISTRY_AUTH={token}\n")),
+        ]);
+
+        let report = scan(dir.path(), &offline()).unwrap();
+
+        let found: Vec<(String, String)> = report
+            .findings
+            .iter()
+            .map(|finding| {
+                (
+                    finding.location.file.to_string_lossy().into_owned(),
+                    finding.rule_id.clone(),
+                )
+            })
+            .collect();
+        let has = |file: &str, rule: &str| found.iter().any(|(f, r)| f == file && r == rule);
+        assert!(has("AGENTS.md", "BAS-ZT1-023"), "{found:?}");
+        assert!(has("tools.py", "BAS-ZT1-023"), "{found:?}");
+        assert!(has("app.py", "BAS-ZT1-010"), "{found:?}");
+        assert!(!has("app.py", "BAS-ZT1-023"), "{found:?}");
+        assert!(found.iter().all(|(f, _)| f != ".env.example"), "{found:?}");
     }
 
     /// `.env.example` is still one of `walk.rs`'s always-walked paths and

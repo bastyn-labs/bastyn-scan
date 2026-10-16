@@ -1879,3 +1879,29 @@ why      = "The mul tool's description ends in a zero-width space (U+200B), invi
 [[expect_none]]
 file = "clean/ordinary.bastyn-tools.json"
 why  = "A snapshot with an ordinary description, a ZWNJ and a left-to-right mark inside text, an emoji variation selector, and a null description -- none of them hidden-text or instruction phrasing."
+
+# ---------------------------------------------------------------------
+# BAS-ZT1-023 -- a literal with the exact format of a provider token.
+# ---------------------------------------------------------------------
+
+[[expect]]
+file     = "vulnerable/zt1_provider_tokens.py"
+line     = 8
+rule     = "BAS-ZT1-023"
+category = "ZT1"
+kind     = "defect"
+severity = "critical"
+why      = "a GitHub token (prefix, 36 alphanumeric characters) on a name that is not credential-shaped"
+
+[[expect]]
+file     = "vulnerable/zt1_provider_tokens.py"
+line     = 12
+rule     = "BAS-ZT1-023"
+category = "ZT1"
+kind     = "defect"
+severity = "critical"
+why      = "an npm token (prefix, 36 alphanumeric characters) in a dict value whose key is not credential-shaped"
+
+[[expect_none]]
+file = "clean/zt1_provider_token_near_misses.py"
+why  = "an environment read, the word token in setting names, a commit SHA, an image digest, an action pin, token-shaped values inside a URL, a markdown link target and a file path, placeholder bodies, and the published AWS example key"

@@ -9,6 +9,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Added
 
 - **`bastyn scan --inspect-remote` captures the tool lists of the public https MCP servers named in config files, checks them with `BAS-MCP-010` to `-012`, and lists every server it did not contact under Coverage gaps.** It is off by default, `--offline` overrides it, and `--save-snapshots <DIR>` keeps the captures.
+- **`BAS-ZT1-023` reports a committed provider token by its exact format.** It covers GitHub tokens, AWS access key IDs, Google API keys, npm tokens and Stripe live secret keys, in any source, instruction, MCP or `.env` file. It never keys on a variable name, and skips values inside URLs, Markdown link targets, file paths, digests and placeholders.
 
 ## [0.6.0] - 2026-10-15
 
