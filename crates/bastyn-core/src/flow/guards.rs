@@ -32,6 +32,11 @@
 //! - **A positive membership check whose branch contains the sink.**
 //!   `if name in <fixed set>:` with the sink inside the consequence.
 //!
+//! - **A calculator-only character class.** The value was filtered or
+//!   fully matched so that it can contain only digits, whitespace,
+//!   parentheses and the operators `+ - * / % .`. Such a value has no name,
+//!   attribute access or call in it. See the `calculator` section below.
+//!
 //! The set must be *fixed* -- a tuple, list or set of literals, or a name
 //! bound to one. `if x not in registry.known()` proves nothing this module
 //! can check, so it does not count.
@@ -157,7 +162,9 @@ fn dependency_names<D: Doc>(expression: &Node<'_, D>) -> HashSet<String> {
 /// "guarded" verdict this module refuses to give.
 fn dominating_guards<D: Doc>(sink: &Node<'_, D>, graph: &FlowGraph) -> HashSet<String> {
     let mut proven = HashSet::new();
+    let mut calculator = Vec::new();
     let mut current = sink.clone();
+    let mut scope = sink.clone();
 
     while let Some(parent) = current.parent() {
         match parent.kind().as_ref() {
@@ -167,6 +174,7 @@ fn dominating_guards<D: Doc>(sink: &Node<'_, D>, graph: &FlowGraph) -> HashSet<S
                         break;
                     }
                     collect_terminating_check(&statement, graph, &mut proven);
+                    calculator::collect_statement(&statement, &mut calculator);
                 }
             }
             "if_statement" | "elif_clause" => {
@@ -176,15 +184,23 @@ fn dominating_guards<D: Doc>(sink: &Node<'_, D>, graph: &FlowGraph) -> HashSet<S
                     && let Some(condition) = parent.field("condition")
                 {
                     collect_membership(&condition, graph, false, &mut proven);
+                    calculator::collect_condition(
+                        &condition,
+                        true,
+                        condition.range().end,
+                        &mut calculator,
+                    );
                 }
             }
             _ => {}
         }
+        scope = parent.clone();
         if SCOPE_KINDS.contains(&parent.kind().as_ref()) {
             break;
         }
         current = parent;
     }
+    proven.extend(calculator::surviving_names(&scope, calculator));
     proven
 }
 
@@ -248,6 +264,374 @@ fn collect_membership<D: Doc>(
         return;
     }
     proven.insert(left.text().into_owned());
+}
+
+/// Calculator-only character classes.
+///
+/// A value that can contain only digits, whitespace, parentheses and the
+/// operators `+ - * / % .` has no identifier, attribute access, call or
+/// string in it, so `eval` on it cannot run arbitrary code. Three checks
+/// prove that, and each is read strictly:
+///
+/// - `re.fullmatch(P, name)` (or `re.match`/`re.search` with a closing `$` or
+///   `\Z`, and for `re.search` a leading `^` as well) where `P` is a single
+///   non-negated character class with an optional `+`/`*`, tested in an `if`
+///   that terminates or whose branch holds the sink.
+/// - `name = re.sub(P, "", value)` where `P` is a single negated class: the
+///   assignment removes everything outside the class. Only the three-argument
+///   form counts, so a replacement count cannot leave characters behind.
+/// - `name.isdigit()` / `name.isdecimal()`, and
+///   `all(c in "<chars>" for c in name)`.
+///
+/// Every character the class or the string admits must be in the allowed
+/// set; a letter, an underscore, a quote or a bracket other than a
+/// parenthesis disqualifies it. A proof lapses when the name is assigned
+/// again after the check, anywhere in the same function.
+mod calculator {
+    use std::collections::HashSet;
+
+    use ast_grep_core::{Doc, Node};
+
+    use crate::flow::graph::callee_path;
+
+    /// A name proven calculator-only from byte offset `from` onwards.
+    pub(super) struct Proof {
+        name: String,
+        from: usize,
+    }
+
+    /// Characters a calculator-only value may contain, besides digits and
+    /// whitespace.
+    const OPERATORS: &str = "+-*/%.()";
+
+    fn is_allowed(c: char) -> bool {
+        c.is_ascii_digit() || matches!(c, ' ' | '\t' | '\n' | '\r') || OPERATORS.contains(c)
+    }
+
+    /// Proofs a statement in a preceding position establishes.
+    pub(super) fn collect_statement<D: Doc>(statement: &Node<'_, D>, out: &mut Vec<Proof>) {
+        match statement.kind().as_ref() {
+            "if_statement" => {
+                let (Some(condition), Some(consequence)) =
+                    (statement.field("condition"), statement.field("consequence"))
+                else {
+                    return;
+                };
+                if super::block_terminates(&consequence) {
+                    collect_condition(&condition, false, statement.range().end, out);
+                }
+            }
+            "expression_statement" => {
+                for assignment in statement.named_children() {
+                    if assignment.kind() != "assignment" {
+                        continue;
+                    }
+                    let (Some(left), Some(right)) =
+                        (assignment.field("left"), assignment.field("right"))
+                    else {
+                        continue;
+                    };
+                    if left.kind() == "identifier" && is_filter(&right) {
+                        out.push(Proof {
+                            name: left.text().into_owned(),
+                            from: statement.range().end,
+                        });
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Record the names `condition` proves calculator-only, given that it is
+    /// known to be `holds` (true or false).
+    pub(super) fn collect_condition<D: Doc>(
+        condition: &Node<'_, D>,
+        holds: bool,
+        from: usize,
+        out: &mut Vec<Proof>,
+    ) {
+        match condition.kind().as_ref() {
+            "parenthesized_expression" => {
+                if let Some(inner) = condition.named_children().next() {
+                    collect_condition(&inner, holds, from, out);
+                }
+            }
+            "not_operator" => {
+                if let Some(argument) = condition.field("argument") {
+                    collect_condition(&argument, !holds, from, out);
+                }
+            }
+            "boolean_operator" => {
+                let operator = condition.field("operator").map(|o| o.kind().into_owned());
+                let wanted = if holds { "and" } else { "or" };
+                if operator.as_deref() == Some(wanted) {
+                    for side in ["left", "right"] {
+                        if let Some(part) = condition.field(side) {
+                            collect_condition(&part, holds, from, out);
+                        }
+                    }
+                }
+            }
+            "comparison_operator" => {
+                // `<call> is None` holds exactly when the call fails.
+                let parts: Vec<Node<'_, D>> = condition.children().collect();
+                let [left, operator, right] = parts.as_slice() else {
+                    return;
+                };
+                if right.kind() == "none" && operator.kind() == "is" {
+                    collect_condition(left, !holds, from, out);
+                } else if right.kind() == "none" && operator.kind() == "is not" {
+                    collect_condition(left, holds, from, out);
+                }
+            }
+            "call" if holds => {
+                if let Some(name) = checked_name(condition) {
+                    out.push(Proof { name, from });
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// The names whose proofs have not been overwritten since the check.
+    pub(super) fn surviving_names<D: Doc>(
+        scope: &Node<'_, D>,
+        proofs: Vec<Proof>,
+    ) -> HashSet<String> {
+        proofs
+            .into_iter()
+            .filter(|proof| !reassigned_after(scope, &proof.name, proof.from))
+            .map(|proof| proof.name)
+            .collect()
+    }
+
+    fn reassigned_after<D: Doc>(scope: &Node<'_, D>, name: &str, from: usize) -> bool {
+        scope.dfs().any(|node| {
+            let target = match node.kind().as_ref() {
+                "assignment" | "augmented_assignment" | "for_statement" | "for_in_clause" => {
+                    node.field("left")
+                }
+                "named_expression" => node.field("name"),
+                _ => None,
+            };
+            target.is_some_and(|target| {
+                node.range().start >= from
+                    && target
+                        .dfs()
+                        .any(|part| part.kind() == "identifier" && part.text() == name)
+            })
+        })
+    }
+
+    /// The name a call proves calculator-only when it holds.
+    fn checked_name<D: Doc>(call: &Node<'_, D>) -> Option<String> {
+        let callee = call.field("function")?;
+        let argument_node = call.field("arguments")?;
+        // A lone generator argument is the `arguments` node itself.
+        let arguments: Vec<Node<'_, D>> = if argument_node.kind() == "generator_expression" {
+            vec![argument_node]
+        } else {
+            argument_node.named_children().collect()
+        };
+        let path = callee_path(&callee);
+        match path.as_str() {
+            "re.fullmatch" | "re.match" | "re.search" => {
+                let [pattern, value, ..] = arguments.as_slice() else {
+                    return None;
+                };
+                if arguments
+                    .iter()
+                    .take(2)
+                    .any(|a| a.kind() == "keyword_argument")
+                {
+                    return None;
+                }
+                let body = literal_body(pattern)?;
+                let (needs_start, needs_end) = match path.as_str() {
+                    "re.fullmatch" => (false, false),
+                    "re.match" => (false, true),
+                    _ => (true, true),
+                };
+                (value.kind() == "identifier" && full_class(&body, needs_start, needs_end))
+                    .then(|| value.text().into_owned())
+            }
+            "all" => {
+                let [generator] = arguments.as_slice() else {
+                    return None;
+                };
+                all_characters_allowed(generator)
+            }
+            _ => {
+                if callee.kind() != "attribute" || !arguments.is_empty() {
+                    return None;
+                }
+                let attribute = callee.field("attribute")?;
+                let object = callee.field("object")?;
+                (object.kind() == "identifier"
+                    && matches!(attribute.text().as_ref(), "isdigit" | "isdecimal"))
+                .then(|| object.text().into_owned())
+            }
+        }
+    }
+
+    /// `all(c in "<chars>" for c in name)` with every char allowed.
+    fn all_characters_allowed<D: Doc>(generator: &Node<'_, D>) -> Option<String> {
+        if generator.kind() != "generator_expression" {
+            return None;
+        }
+        let body = generator.field("body")?;
+        let clause = generator
+            .children()
+            .find(|child| child.kind() == "for_in_clause")?;
+        let (variable, iterable) = (clause.field("left")?, clause.field("right")?);
+        if variable.kind() != "identifier" || iterable.kind() != "identifier" {
+            return None;
+        }
+        let parts: Vec<Node<'_, D>> = body.children().collect();
+        let [element, operator, allowed] = parts.as_slice() else {
+            return None;
+        };
+        if body.kind() != "comparison_operator"
+            || operator.kind() != "in"
+            || element.kind() != "identifier"
+            || element.text() != variable.text()
+        {
+            return None;
+        }
+        let chars = literal_body(allowed)?;
+        (!chars.is_empty() && chars.chars().all(is_allowed)).then(|| iterable.text().into_owned())
+    }
+
+    /// Whether `value` is `re.sub(<negated class>, "", operand)`, possibly
+    /// followed by `.strip()`-style calls that only remove characters.
+    fn is_filter<D: Doc>(value: &Node<'_, D>) -> bool {
+        if value.kind() != "call" {
+            return false;
+        }
+        let Some(callee) = value.field("function") else {
+            return false;
+        };
+        let trims = callee.kind() == "attribute"
+            && callee
+                .field("attribute")
+                .is_some_and(|a| matches!(a.text().as_ref(), "strip" | "lstrip" | "rstrip"));
+        if trims {
+            let no_arguments = value
+                .field("arguments")
+                .is_some_and(|a| a.named_children().next().is_none());
+            return no_arguments && callee.field("object").is_some_and(|o| is_filter(&o));
+        }
+        if callee_path(&callee) != "re.sub" {
+            return false;
+        }
+        let Some(arguments) = value.field("arguments") else {
+            return false;
+        };
+        let arguments: Vec<Node<'_, D>> = arguments.named_children().collect();
+        let [pattern, replacement, _operand] = arguments.as_slice() else {
+            return false;
+        };
+        if arguments.iter().any(|a| a.kind() == "keyword_argument") {
+            return false;
+        }
+        literal_body(replacement).is_some_and(|r| r.is_empty())
+            && literal_body(pattern).is_some_and(|body| negated_class(&body))
+    }
+
+    /// The text between the quotes of a plain or raw string literal. A
+    /// non-raw literal that contains a backslash is refused, so no escape
+    /// sequence has to be interpreted.
+    fn literal_body<D: Doc>(node: &Node<'_, D>) -> Option<String> {
+        if node.kind() != "string" || node.children().any(|c| c.kind() == "interpolation") {
+            return None;
+        }
+        let text = node.text().into_owned();
+        let quote = text.find(['"', '\''])?;
+        let raw = match &text[..quote] {
+            "" => false,
+            "r" | "R" => true,
+            _ => return None,
+        };
+        let rest = &text[quote..];
+        let width = if rest.starts_with("\"\"\"") || rest.starts_with("'''") {
+            3
+        } else {
+            1
+        };
+        let body = rest.get(width..rest.len().checked_sub(width)?)?;
+        (raw || !body.contains('\\')).then(|| body.to_owned())
+    }
+
+    /// `^?[class]<quantifier>?$?` with a non-negated, calculator-only class.
+    fn full_class(pattern: &str, needs_start: bool, needs_end: bool) -> bool {
+        let (rest, start) = pattern
+            .strip_prefix('^')
+            .map_or((pattern, false), |r| (r, true));
+        let (rest, end) = if let Some(r) = rest.strip_suffix("\\Z") {
+            (r, true)
+        } else if let Some(r) = rest.strip_suffix('$') {
+            (r, true)
+        } else {
+            (rest, false)
+        };
+        if (needs_start && !start) || (needs_end && !end) {
+            return false;
+        }
+        parse_class(rest) == Some(false)
+    }
+
+    /// `[^class]` with an optional `+`, whose members are all allowed.
+    fn negated_class(pattern: &str) -> bool {
+        parse_class(pattern) == Some(true)
+    }
+
+    /// Parse `[...]` plus an optional `+`/`*` and nothing else, and return
+    /// whether the class is negated. `None` when the text is anything else
+    /// or the class admits a character outside the allowed set.
+    fn parse_class(pattern: &str) -> Option<bool> {
+        let mut chars = pattern.strip_prefix('[')?.chars().peekable();
+        let negated = chars.next_if_eq(&'^').is_some();
+        let mut members = 0_usize;
+        let mut previous: Option<char> = None;
+        loop {
+            let c = chars.next()?;
+            if c == ']' {
+                break;
+            }
+            if c == '-' && previous.is_some() && chars.peek() != Some(&']') {
+                let end = chars.next()?;
+                let end = if end == '\\' { chars.next()? } else { end };
+                let start = previous?;
+                if start > end || !(start..=end).all(is_allowed) {
+                    return None;
+                }
+                previous = None;
+                members += 1;
+                continue;
+            }
+            let literal = if c == '\\' {
+                match chars.next()? {
+                    's' | 'd' => {
+                        previous = None;
+                        members += 1;
+                        continue;
+                    }
+                    escaped if OPERATORS.contains(escaped) => escaped,
+                    _ => return None,
+                }
+            } else {
+                c
+            };
+            if !is_allowed(literal) {
+                return None;
+            }
+            previous = Some(literal);
+            members += 1;
+        }
+        let tail: String = chars.collect();
+        (members > 0 && matches!(tail.as_str(), "" | "+" | "*")).then_some(negated)
+    }
 }
 
 #[cfg(test)]
@@ -401,6 +785,135 @@ def run_dtype_op(torch_dtype, flag):
             raise ValueError(torch_dtype)
     return eval(f\"torch.{torch_dtype}\")
 "
+        ));
+    }
+
+    /// Wraps `body` in a function so each test states only the check.
+    fn guarded_after(body: &str) -> bool {
+        let indented = body
+            .lines()
+            .map(|line| format!("    {line}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        eval_argument_is_guarded(&format!("import re\n\n\ndef calc(expr):\n{indented}\n"))
+    }
+
+    #[test]
+    fn a_full_match_on_a_calculator_class_that_raises_guards() {
+        assert!(guarded_after(
+            "if not re.fullmatch(r\"[0-9+\\-*/(). ]+\", expr):\n    raise ValueError(expr)\nreturn eval(expr)"
+        ));
+        assert!(guarded_after(
+            "if re.fullmatch(r\"[0-9+\\-*/(). ]+\", expr) is None:\n    return None\nreturn eval(expr)"
+        ));
+        assert!(guarded_after(
+            "if expr and re.fullmatch(r\"[0-9\\s()+*/%.-]*\", expr):\n    return eval(expr)\nreturn None"
+        ));
+        assert!(guarded_after(
+            "if not expr or not re.fullmatch(r\"[0-9+*/() ]+\", expr):\n    raise ValueError(expr)\nreturn eval(expr)"
+        ));
+    }
+
+    #[test]
+    fn a_class_that_admits_a_letter_or_other_symbol_does_not_guard() {
+        for class in [
+            "[0-9a-z+*/() ]+",
+            "[0-9_+*/() ]+",
+            "[\\w+*/() ]+",
+            "[0-9+*/()\\[\\] ]+",
+            "[0-9+*/(). \\\"]+",
+            "[+-/0-9]+",
+            "[^0-9+*/() ]+",
+            "[0-9]+|x",
+        ] {
+            let body = format!(
+                "if not re.fullmatch(r\"{class}\", expr):\n    raise ValueError(expr)\nreturn eval(expr)"
+            );
+            assert!(!guarded_after(&body), "{class}");
+        }
+    }
+
+    #[test]
+    fn a_match_that_is_not_anchored_at_the_end_does_not_guard() {
+        assert!(!guarded_after(
+            "if not re.match(r\"[0-9+*/() ]+\", expr):\n    raise ValueError(expr)\nreturn eval(expr)"
+        ));
+        assert!(!guarded_after(
+            "if not re.search(r\"[0-9+*/() ]+\", expr):\n    raise ValueError(expr)\nreturn eval(expr)"
+        ));
+        assert!(!guarded_after(
+            "if not re.search(r\"^[0-9+*/() ]+\", expr):\n    raise ValueError(expr)\nreturn eval(expr)"
+        ));
+        assert!(guarded_after(
+            "if not re.match(r\"[0-9+*/() ]+$\", expr):\n    raise ValueError(expr)\nreturn eval(expr)"
+        ));
+        assert!(guarded_after(
+            "if not re.search(r\"^[0-9+*/() ]+$\", expr):\n    raise ValueError(expr)\nreturn eval(expr)"
+        ));
+    }
+
+    #[test]
+    fn a_full_match_whose_branch_falls_through_does_not_guard() {
+        assert!(!guarded_after(
+            "if not re.fullmatch(r\"[0-9+*/() ]+\", expr):\n    print(expr)\nreturn eval(expr)"
+        ));
+    }
+
+    #[test]
+    fn a_full_match_on_another_name_does_not_guard() {
+        assert!(!guarded_after(
+            "if not re.fullmatch(r\"[0-9+*/() ]+\", other):\n    raise ValueError(other)\nreturn eval(expr)"
+        ));
+    }
+
+    #[test]
+    fn a_calculator_proof_lapses_when_the_name_is_reassigned() {
+        assert!(!guarded_after(
+            "if not re.fullmatch(r\"[0-9+*/() ]+\", expr):\n    raise ValueError(expr)\nexpr = expr + \"__import__('os')\"\nreturn eval(expr)"
+        ));
+        assert!(!guarded_after(
+            "if not re.fullmatch(r\"[0-9+*/() ]+\", expr):\n    raise ValueError(expr)\nif expr:\n    expr = open(expr).read()\nreturn eval(expr)"
+        ));
+    }
+
+    #[test]
+    fn a_substitution_that_removes_everything_outside_the_class_guards() {
+        assert!(guarded_after(
+            "clean = re.sub(r\"[^0-9+\\-*/(). ]\", \"\", expr).strip()\nreturn eval(clean)"
+        ));
+        assert!(guarded_after(
+            "expr = re.sub(r'[^0-9+\\-*/(). ]+', '', expr)\nreturn eval(expr)"
+        ));
+    }
+
+    #[test]
+    fn a_substitution_that_leaves_other_characters_behind_does_not_guard() {
+        for statement in [
+            "clean = re.sub(r\"[^0-9a-z+*/() ]\", \"\", expr)",
+            "clean = re.sub(r\"[0-9+*/() ]\", \"\", expr)",
+            "clean = re.sub(r\"[^0-9+*/() ]\", \"x\", expr)",
+            "clean = re.sub(r\"[^0-9+*/() ]\", \"\", expr, count=1)",
+            "clean = re.sub(r\"[^0-9+*/() ]\", \"\", expr, 1)",
+            "clean = re.sub(r\"[^0-9+*/() ]\", \"\", expr).replace(\"x\", \"y\")",
+        ] {
+            let body = format!("{statement}\nreturn eval(clean)");
+            assert!(!guarded_after(&body), "{statement}");
+        }
+    }
+
+    #[test]
+    fn a_digit_check_and_an_all_characters_check_guard() {
+        assert!(guarded_after(
+            "if not expr.isdigit():\n    raise ValueError(expr)\nreturn eval(expr)"
+        ));
+        assert!(guarded_after(
+            "if not all(ch in \"0123456789+-*/() \" for ch in expr):\n    raise ValueError(expr)\nreturn eval(expr)"
+        ));
+        assert!(!guarded_after(
+            "if not all(ch in \"0123456789+-*/() abc\" for ch in expr):\n    raise ValueError(expr)\nreturn eval(expr)"
+        ));
+        assert!(!guarded_after(
+            "if not all(ch in \"0123456789+-*/() \" for ch in other):\n    raise ValueError(expr)\nreturn eval(expr)"
         ));
     }
 }

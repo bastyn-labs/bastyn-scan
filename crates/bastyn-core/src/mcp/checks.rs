@@ -496,7 +496,8 @@ fn check_unauthenticated_http(
     Some(Finding {
         rule_id: "BAS-MCP-002".to_string(),
         title: "MCP server reached over unauthenticated plaintext HTTP".to_string(),
-        kind: Kind::Defect,
+        // Reported as an observation: the match alone does not show a real problem.
+        kind: Kind::Observation,
         severity: Severity::High,
         confidence: Confidence::Medium,
         categories: vec![Category::Zt1],
@@ -567,7 +568,8 @@ fn check_unpinned_server(
     vec![Finding {
         rule_id: "BAS-MCP-005".to_string(),
         title: format!("MCP server '{name}' is launched without a version pin"),
-        kind: Kind::Defect,
+        // Reported as an observation: the match alone does not show a real problem.
+        kind: Kind::Observation,
         severity: Severity::High,
         confidence: Confidence::High,
         categories: vec![Category::Llm04],
@@ -1290,7 +1292,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(finding.rule_id, "BAS-MCP-002");
-        assert_eq!(finding.kind, Kind::Defect);
+        assert_eq!(finding.kind, Kind::Observation);
     }
 
     #[test]

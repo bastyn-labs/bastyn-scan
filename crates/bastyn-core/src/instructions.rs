@@ -233,7 +233,8 @@ pub fn inspect_text(relative_path: &Path, contents: &str) -> Vec<Finding> {
     vec![Finding {
         rule_id: RULE_ID.to_owned(),
         title: "Hidden Unicode characters in an agent instruction file".to_owned(),
-        kind: Kind::Defect,
+        // Reported as an observation: the match alone does not show a real problem.
+        kind: Kind::Observation,
         severity: Severity::Critical,
         confidence: Confidence::High,
         categories: vec![Category::Llm01],
@@ -246,14 +247,13 @@ pub fn inspect_text(relative_path: &Path, contents: &str) -> Vec<Finding> {
         description: format!(
             "This file contains {count} invisible or hidden Unicode character(s), the first \
              being {}. These codepoints render as nothing on screen, so a human reviewing this \
-             file sees only the visible text while an agent reading it sees the hidden payload \
-             too -- a known technique (\"Rules File Backdoor\") for smuggling extra instructions \
-             past code review.",
+             file sees only the visible text while an agent reading it sees them too. The \
+             characters alone do not show a concealed instruction (the file may describe or \
+             quote them), so a reviewer should confirm what they hide.",
             codepoint_name(ch)
         ),
-        remediation: "Remove the hidden characters and, if this file was not meant to contain \
-                       them, treat the repository as compromised: audit recent changes to this \
-                       file and any agent behavior it could have influenced."
+        remediation: "Check whether the hidden characters are intended. If this file was not \
+                       meant to contain them, remove them and review recent changes to the file."
             .to_owned(),
         secondary_rule_ids: Vec::new(),
         references: Vec::new(),
@@ -316,7 +316,7 @@ mod tests {
 
         assert_eq!(findings.len(), 1, "{findings:#?}");
         assert_eq!(findings[0].rule_id, "BAS-LLM01-001");
-        assert_eq!(findings[0].kind, Kind::Defect);
+        assert_eq!(findings[0].kind, Kind::Observation);
         assert_eq!(findings[0].location.line, 3);
     }
 
@@ -336,6 +336,7 @@ mod tests {
         let findings = inspect(Path::new(".cursorrules"), &contents);
 
         assert_eq!(findings.len(), 1, "{findings:#?}");
+        assert_eq!(findings[0].kind, Kind::Observation);
     }
 
     #[test]

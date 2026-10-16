@@ -175,3 +175,42 @@ rules:
         "{error:?}"
     );
 }
+
+/// A command made only of `sys.executable` and literal text is closed; one
+/// that also interpolates a function parameter is not.
+#[test]
+fn exclude_if_closed_value_drops_a_command_of_sys_executable_and_literals() {
+    let yaml = r"
+rules:
+  - id: TEST-EXCLUDE-CLOSED-EXE
+    title: test
+    kind: defect
+    severity: critical
+    confidence: high
+    categories: [LLM10]
+    language: python
+    any:
+      - os.system($ARG)
+    exclude_if:
+      variable: ARG
+      kind: closed_value
+    description: test
+    remediation: test
+";
+    let rules = RuleSet::from_yaml(yaml).unwrap();
+    let source = "\
+import os
+import sys
+
+
+def install_fixed():
+    os.system(f\"{sys.executable} -m pip install requests -q\")
+
+
+def install_named(package):
+    os.system(f\"{sys.executable} -m pip install {package}\")
+";
+    let findings = scan_source(&rules, Path::new("t.py"), source);
+    assert_eq!(findings.len(), 1, "{findings:#?}");
+    assert_eq!(findings[0].location.line, 10);
+}

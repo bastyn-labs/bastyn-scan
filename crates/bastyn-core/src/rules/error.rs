@@ -181,14 +181,6 @@ pub enum RuleError {
         source: RegexMatcherError,
     },
 
-    /// A rule declared `kind: observation` and also `flow.unproven`, which
-    /// only changes what a defect rule reports.
-    #[error("rule `{id}`: `flow.unproven` is only meaningful on a `kind: defect` rule")]
-    UnprovenOnObservation {
-        /// The offending rule's id.
-        id: String,
-    },
-
     /// A field names a metavariable that none of the rule's `any` patterns
     /// binds, so it could never be tested.
     #[error("rule `{id}`: `{field}` names `${var}`, which no `any` pattern binds")]
@@ -293,6 +285,21 @@ pub enum RuleError {
          loop `passthrough_downgrade` is computed in"
     )]
     PassthroughDowngradeWithSink {
+        /// The offending rule's id.
+        id: String,
+    },
+
+    /// A rule declared both `flow.sink` and `flow.unreached_parameter_downgrade`.
+    ///
+    /// Rejected for the same reason as [`Self::PassthroughDowngradeWithSink`]:
+    /// the wrapper-sink pass builds its findings outside the per-node match
+    /// loop the downgrade is computed in.
+    #[error(
+        "rule `{id}`: `flow.sink` and `flow.unreached_parameter_downgrade` cannot be combined; \
+         the wrapper-sink pass `flow.sink` enables builds its findings outside the per-node \
+         match loop `unreached_parameter_downgrade` is computed in"
+    )]
+    UnreachedParameterDowngradeWithSink {
         /// The offending rule's id.
         id: String,
     },

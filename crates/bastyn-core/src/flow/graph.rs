@@ -174,7 +174,8 @@ pub(crate) struct Resolved {
     /// HTTP request data, or the result of a catalogued model, tool or
     /// retrieval call. Unlike the other facts this is an OR across
     /// segments, because one caller-supplied segment is enough to make the
-    /// whole value caller-influenced. Consumed by a flow clause's
+    /// whole value caller-influenced. Consumed by an `exclude_if:
+    /// no_caller_input` rule clause (`BAS-LLM10-012`) and by a flow clause's
     /// `caller_input: true` (together with [`Resolved::through_calls`]).
     pub(crate) caller_input: bool,
     /// Whether this value is the result of a call with an argument or a
@@ -187,6 +188,11 @@ pub(crate) struct Resolved {
     /// `caller_input: true`; always false for a value with no call in its
     /// derivation.
     pub(crate) through_calls: bool,
+    /// The part of [`Resolved::caller_input`] that does not depend on who
+    /// calls an enclosing function: at least one non-literal segment is HTTP
+    /// request data or the result of a catalogued model, tool or retrieval
+    /// call. Also an OR across segments.
+    pub(crate) remote_input: bool,
 }
 
 impl Resolved {
@@ -200,6 +206,7 @@ impl Resolved {
             cli_argument: false,
             caller_input: false,
             through_calls: false,
+            remote_input: false,
         }
     }
 
@@ -213,6 +220,7 @@ impl Resolved {
             cli_argument: true,
             caller_input: false,
             through_calls: false,
+            remote_input: false,
         }
     }
 
@@ -226,6 +234,7 @@ impl Resolved {
             cli_argument: self.cli_argument && other.cli_argument,
             caller_input: self.caller_input || other.caller_input,
             through_calls: self.through_calls || other.through_calls,
+            remote_input: self.remote_input || other.remote_input,
         }
     }
 }
@@ -380,6 +389,47 @@ impl FlowGraph {
         self.resolved
             .get(&node_id)
             .is_some_and(|resolved| resolved.caller_input || resolved.through_calls)
+    }
+
+    /// Whether the value at `node_id` has at least one non-literal segment
+    /// that a caller or remote party can supply: a function parameter
+    /// (other than `self`/`cls` or a click/typer command parameter), HTTP
+    /// request data, or the result of a catalogued model, tool or retrieval
+    /// call. `false` for a node the graph did not examine.
+    pub(crate) fn has_caller_input(&self, node_id: usize) -> bool {
+        self.resolved
+            .get(&node_id)
+            .is_some_and(|resolved| resolved.caller_input)
+    }
+
+    /// Whether the caller input at `arg` (see [`Self::has_caller_input`]) is
+    /// only function parameters, and the function that `matched` sits in is
+    /// neither a recognized entry point (see [`is_entry_point_function`]) nor
+    /// called from one in this file. Such a value comes from a caller this
+    /// file does not show, so whether it is attacker-reachable is not
+    /// provable. `false` when `arg` also carries HTTP request data or a
+    /// model, tool or retrieval result, which is caller-chosen whoever calls
+    /// the function.
+    pub(crate) fn is_unreached_parameter_input<D: Doc>(
+        &self,
+        matched: &Node<'_, D>,
+        arg: &Node<'_, D>,
+    ) -> bool {
+        let Some(resolved) = self.resolved.get(&arg.node_id()) else {
+            return false;
+        };
+        if !resolved.caller_input || resolved.remote_input {
+            return false;
+        }
+        !matched
+            .ancestors()
+            .filter(|ancestor| ancestor.kind() == "function_definition")
+            .any(|function| {
+                is_entry_point_function(&function)
+                    || function.field("name").is_some_and(|name| {
+                        self.entry_point_forwards.contains(name.text().as_ref())
+                    })
+            })
     }
 
     /// Whether a guard dominates the call argument at `node_id`.
@@ -1643,6 +1693,7 @@ impl<'r, D: Doc> Analyzer<'r, D> {
                             // class, not a value a caller passes in.
                             caller_input,
                             through_calls: false,
+                            remote_input: false,
                         }),
                         scope: inner,
                         branches: Vec::new(),
@@ -1930,6 +1981,9 @@ impl<'r, D: Doc> Analyzer<'r, D> {
         if let Some(argv) = sys_argv_resolved(node) {
             return argv;
         }
+        if let Some(executable) = sys_executable_resolved(node) {
+            return executable;
+        }
         let attribute_text = node.field("attribute").map(|attr| attr.text().into_owned());
         let closed_here = attribute_text
             .as_deref()
@@ -1942,6 +1996,7 @@ impl<'r, D: Doc> Analyzer<'r, D> {
         answer.closed = answer.closed || closed_here;
         if is_request_data_expression(node) {
             answer.caller_input = true;
+            answer.remote_input = true;
         }
         if attribute_text.as_deref() == Some("name")
             && matches!(&answer.prov, Prov::Call { callee } if TEMPFILE_NAME_ATTRIBUTE_RECEIVERS.contains(&callee.as_str()))
@@ -2093,7 +2148,7 @@ impl<'r, D: Doc> Analyzer<'r, D> {
                             })
                         })
                 }));
-        let caller_input = self.call_caller_input(node, scope, depth, &callee);
+        let (caller_input, remote_input) = self.call_caller_input(node, scope, depth, &callee);
         let through_calls = callee != "ast.parse" && self.call_carries_input(node, scope, depth);
         Resolved {
             closed: callee == "type"
@@ -2107,11 +2162,12 @@ impl<'r, D: Doc> Analyzer<'r, D> {
             cli_argument,
             caller_input,
             through_calls,
+            remote_input,
             prov: Prov::Call { callee },
         }
     }
 
-    /// The `caller_input` fact of a call. A catalogued
+    /// The `(caller_input, remote_input)` facts of a call. A catalogued
     /// model, tool, retrieval or HTTP-request call returns a value a remote
     /// party can shape, and so does `.parse_args()` on a Flask-RESTful style
     /// `RequestParser` (it parses HTTP request data). A whitelisted path
@@ -2123,7 +2179,7 @@ impl<'r, D: Doc> Analyzer<'r, D> {
         scope: usize,
         depth: usize,
         callee: &str,
-    ) -> bool {
+    ) -> (bool, bool) {
         let remote_source = classify_source(callee).is_some_and(|kind| {
             matches!(
                 kind,
@@ -2134,6 +2190,7 @@ impl<'r, D: Doc> Analyzer<'r, D> {
             )
         }) || self.is_request_parser_parse(node, scope, depth);
         let mut caller_input = remote_source;
+        let mut remote_input = remote_source;
         if PATH_CONST_FUNCTIONS.contains(&callee)
             && let Some(arguments) = node.field("arguments")
         {
@@ -2146,10 +2203,11 @@ impl<'r, D: Doc> Analyzer<'r, D> {
                 if let Some(value) = value {
                     let inner = self.resolve(&value, scope, depth + 1);
                     caller_input |= inner.caller_input;
+                    remote_input |= inner.remote_input;
                 }
             }
         }
-        caller_input
+        (caller_input, remote_input)
     }
 
     /// Whether any argument of the call, or its receiver when it is a method
@@ -2429,6 +2487,7 @@ impl<'r, D: Doc> Analyzer<'r, D> {
                     cli_argument: previous.cli_argument && resolved.cli_argument,
                     caller_input: previous.caller_input || resolved.caller_input,
                     through_calls: previous.through_calls || resolved.through_calls,
+                    remote_input: previous.remote_input || resolved.remote_input,
                 },
                 Some(previous) => Resolved {
                     prov: Prov::Unknown,
@@ -2439,6 +2498,7 @@ impl<'r, D: Doc> Analyzer<'r, D> {
                     cli_argument: previous.cli_argument && resolved.cli_argument,
                     caller_input: previous.caller_input || resolved.caller_input,
                     through_calls: previous.through_calls || resolved.through_calls,
+                    remote_input: previous.remote_input || resolved.remote_input,
                 },
             });
         }
@@ -2544,6 +2604,17 @@ fn is_request_data_expression<D: Doc>(node: &Node<'_, D>) -> bool {
         && segments
             .next()
             .is_some_and(|field| REQUEST_DATA_FIELDS.contains(&field))
+}
+
+/// `sys.executable` resolved as a closed value, when `node` is written exactly
+/// as that dotted path: the path of the running interpreter, fixed when the
+/// process starts and not supplied by any request or model. Nothing else about
+/// the value is claimed.
+fn sys_executable_resolved<D: Doc>(node: &Node<'_, D>) -> Option<Resolved> {
+    (callee_path(node) == "sys.executable").then(|| Resolved {
+        closed: true,
+        ..Resolved::unknown()
+    })
 }
 
 /// The dotted path of a callee, as written, with subscripts and call results
@@ -3770,5 +3841,33 @@ def run(opts):
         let (call, arg) = call_and_first_arg(&root, "subprocess.run");
 
         assert!(graph.is_passthrough_observation_eligible(&call, &arg));
+    }
+
+    /// `sys.executable` is the running interpreter's path, so it is closed on
+    /// its own and an f-string built from it and literal text stays closed;
+    /// a segment that is a function parameter keeps the string open.
+    #[test]
+    fn sys_executable_with_literal_text_is_closed() {
+        let source = "\
+import sys
+
+
+def install(package):
+    fixed = f\"{sys.executable} -m pip install requests\"
+    open_one = f\"{sys.executable} -m pip install {package}\"
+    return fixed, open_one
+";
+        let (root, graph) = build_python_graph(source);
+        let tuple = root
+            .root()
+            .dfs()
+            .find(|node| node.kind() == "return_statement")
+            .and_then(|stmt| stmt.named_children().next())
+            .expect("a return statement");
+        let mut names = tuple.named_children();
+        let fixed = names.next().expect("first element");
+        let open_one = names.next().expect("second element");
+        assert!(graph.is_closed(fixed.node_id()));
+        assert!(!graph.is_closed(open_one.node_id()));
     }
 }
