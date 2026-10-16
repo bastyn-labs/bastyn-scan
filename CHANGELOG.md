@@ -10,6 +10,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **`bastyn scan --inspect-remote` captures the tool lists of the public https MCP servers named in config files, checks them with `BAS-MCP-010` to `-012`, and lists every server it did not contact under Coverage gaps.** It is off by default, `--offline` overrides it, and `--save-snapshots <DIR>` keeps the captures.
 
+### Changed
+
+- **`BAS-LLM10-004` and `BAS-LLM10-011` report a defect only when the evaluated or parsed text traces to input from outside.** That means a function parameter, HTTP request data, a model or tool result or a network read, including a value computed by calls over one of those (`compile(text)`, `text.strip()`). When the text cannot be traced to any of them, for example a loop variable over a dict of literals, the result of a helper that only sees literals, the contents of a fixed file or a value parsed with `ast.parse`, the call is an observation (shown with `--show-observations`). `BAS-LLM10-011` also no longer matches `yaml.load` calls that pass a loader as a second positional argument.
+- **`BAS-LLM10-009` no longer reports a command given as a list whose first element is a string literal** (for example `subprocess.run(["start", path], shell=True)`). The remaining list elements are arguments, not shell syntax. A list whose first element is not a literal is still reported.
+
 ## [0.6.0] - 2026-10-15
 
 ### Added

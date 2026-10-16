@@ -1879,3 +1879,96 @@ why      = "The mul tool's description ends in a zero-width space (U+200B), invi
 [[expect_none]]
 file = "clean/ordinary.bastyn-tools.json"
 why  = "A snapshot with an ordinary description, a ZWNJ and a left-to-right mark inside text, an emoji variation selector, and a null description -- none of them hidden-text or instruction phrasing."
+
+# ---------------------------------------------------------------------
+# BAS-LLM10-004 / BAS-LLM10-011: eval/exec and yaml.load are defects when
+# the operand traces to a parameter, a network read or a model/tool/request
+# result (directly or through calls over such a value), and observations
+# when its origin cannot be traced. BAS-LLM10-009: a list command whose
+# first element is a literal is not a composed shell command line.
+# ---------------------------------------------------------------------
+
+[[expect]]
+file     = "vulnerable/llm10_eval_yaml_traced_input.py"
+line     = 8
+rule     = "BAS-LLM10-004"
+category = "LLM10"
+kind     = "defect"
+severity = "high"
+why      = "exec(compile(snippet.strip(), ...)) -- the executed code object is built by calls over a function parameter."
+
+[[expect]]
+file     = "vulnerable/llm10_eval_yaml_traced_input.py"
+line     = 13
+rule     = "BAS-LLM10-004"
+category = "LLM10"
+kind     = "defect"
+severity = "high"
+why      = "exec(body) where body is the text of a network response."
+
+[[expect]]
+file     = "vulnerable/llm10_eval_yaml_traced_input.py"
+line     = 17
+rule     = "BAS-LLM10-011"
+category = "LLM10"
+kind     = "defect"
+severity = "high"
+why      = "yaml.load(text.strip()) with the default loader -- the parsed text is derived from a function parameter through a call."
+
+[[expect]]
+file     = "vulnerable/llm10_eval_yaml_traced_input.py"
+line     = 21
+rule     = "BAS-LLM10-011"
+category = "LLM10"
+kind     = "defect"
+severity = "high"
+why      = "yaml.load(text, Loader=yaml.UnsafeLoader) on a function parameter."
+
+[[expect]]
+file     = "observations/eval_yaml_untraced_operand.py"
+line     = 17
+rule     = "BAS-LLM10-004"
+category = "LLM10"
+kind     = "observation"
+severity = "high"
+why      = "The executed text is a loop variable over a module-level dict of literals; it does not trace to a parameter or other external input."
+
+[[expect]]
+file     = "observations/eval_yaml_untraced_operand.py"
+line     = 22
+rule     = "BAS-LLM10-004"
+category = "LLM10"
+kind     = "observation"
+severity = "high"
+why      = "The executed text is the result of a local helper applied to a module-level literal; it does not trace to external input."
+
+[[expect]]
+file     = "observations/eval_yaml_untraced_operand.py"
+line     = 27
+rule     = "BAS-LLM10-004"
+category = "LLM10"
+kind     = "observation"
+severity = "high"
+why      = "The evaluated code object is compiled from a syntax tree built by ast.parse, which is not traced back to its source text."
+
+[[expect]]
+file     = "observations/eval_yaml_untraced_operand.py"
+line     = 32
+rule     = "BAS-LLM10-011"
+category = "LLM10"
+kind     = "observation"
+severity = "high"
+why      = "yaml.load on the result of a local helper applied to a module-level literal; the text does not trace to external input."
+
+[[expect]]
+file     = "vulnerable/llm10_shell_list_first_element.py"
+line     = 7
+rule     = "BAS-LLM10-009"
+category = "LLM10"
+kind     = "defect"
+severity = "critical"
+why      = "A list command with shell=True whose first element is a function parameter, not a literal program name."
+
+[[expect_none]]
+file = "clean/shell_list_literal_program.py"
+why  = "List commands with shell=True whose first element is a literal program name (double- and single-quoted); the remaining elements are arguments, not shell syntax."
