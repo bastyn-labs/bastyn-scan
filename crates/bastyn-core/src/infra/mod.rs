@@ -22,7 +22,7 @@
 //! | `BAS-INFRA-003` | A volume mounting `/var/run/docker.sock` | defect | `ZT3` |
 //! | `BAS-INFRA-004` | `privileged: true` | defect | `ZT3` |
 //! | `BAS-INFRA-005` | `network_mode: host` | observation | `ZT3` |
-//! | `BAS-INFRA-006` | A hardcoded password/secret/token in `ENV`/`ARG` or Compose `environment:` | defect | `ZT1` |
+//! | `BAS-INFRA-006` | A hardcoded password/secret/token in `ENV`/`ARG` or Compose `environment:` | observation | `ZT1` |
 //! | `BAS-INFRA-010` | `pid: host` | observation | `ZT3` |
 //!
 //! # ZT3.1 and ZT3.2 are mostly already here

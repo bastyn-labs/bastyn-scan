@@ -6,11 +6,37 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **`BAS-INFRA-006` (credential in a Dockerfile or Compose file) is now an observation.** The matched code does not show whether the value is a real credential. Severity is unchanged.
+- **`BAS-MCP-002` (MCP server reached over plaintext HTTP without authentication) and `BAS-MCP-005` (MCP server launched from a registry without a version pin) are now observations.** The server configuration alone does not show where the host or the launched package comes from.
+- **`BAS-ZT2-002` (wildcard tool grant) is now an observation.** The matched code does not show where the grant comes from or what the tools can reach.
+- **`BAS-LLM10-011` (`yaml.load` without a safe loader) is now an observation.** The call alone does not show where the loaded text comes from.
+- **`BAS-LLM10-017` (SQL built by interpolation reaches execution) is now an observation.** The matched code does not show where the interpolated value comes from.
+
+These rules still run. Their findings appear with `--show-observations` and never fail a run.
+
+- **The hardcoded-credential rules `BAS-ZT1-001`, `-002`, `-003`, `-010`, `-011`, `-019`, `-020` and `-022`, and `BAS-LLM02-001`, `-002`, `-004` and `-005`, now report observations instead of defects.** The matched code does not show where a value comes from or whether it is a live credential. The rules still run, with unchanged matching, severities and remediation text, and their findings appear with `--show-observations`. They no longer count toward `--fail-on`.
+- **`BAS-ZT1-003` follows the default test-path policy.** A key-shaped literal in a test file is an observation like any other finding in a test path.
+
+- **`BAS-LLM10-004` no longer reports `eval()`/`exec()` on a value limited to digits, whitespace, parentheses and `+ - * / % .` operators.** The limit can be a `re.fullmatch` (or anchored `re.match`/`re.search`) on a single character class that rejects the value, a `re.sub` that deletes every character outside such a class, an `isdigit()`/`isdecimal()` check, or an `all(c in "..." for c in value)` check. A class that admits a letter, underscore, quote or bracket other than a parenthesis does not count, and the check stops counting if the value is reassigned afterwards.
+
+- **`BAS-LLM10-009` no longer reports a shell command made only of literal text, module-level constants and `sys.executable`.** A command with any other non-literal part is reported as before.
+
 ### Added
 
 - **`BAS-SKILL-010` reports text, or a shell or PowerShell script inside a skill folder, that downloads code from a URL and runs it with no check.** It reads a download piped or passed into a shell (`curl URL | sh`, `bash <(curl URL)`, `irm URL | iex`), a script or executable downloaded to a file and then run, and a cloned repository whose `install`, `setup` or `bootstrap` script is then run. It needs a literal `http` or `https` URL, and is skipped when a checksum, signature or review step sits between the download and the run, or when the text refuses or quotes the command. Observation only.
 - **Shell and PowerShell scripts (`.sh`, `.bash`, `.zsh`, `.ps1`) inside a skill folder are now read**, and are listed in the new `coverage.skill_script_files` (omitted from the JSON when empty) instead of `coverage.skill_unanalysed`.
 - **`bastyn scan --inspect-remote` captures the tool lists of the public https MCP servers named in config files, checks them with `BAS-MCP-010` to `-012`, and lists every server it did not contact under Coverage gaps.** It is off by default, `--offline` overrides it, and `--save-snapshots <DIR>` keeps the captures.
+- **`BAS-ZT1-023` reports a committed provider token by its exact format.** It covers GitHub tokens, AWS access key IDs, Google API keys, npm tokens and Stripe live secret keys, in any source, instruction, MCP or `.env` file. It never keys on a variable name, and skips values inside URLs, Markdown link targets, file paths, digests and placeholders.
+
+### Changed
+
+- **`BAS-SKILL-002` (instruction-override phrasing) is now an observation.** The text alone does not show whether the file tells the agent to follow the phrase or only quotes it. It is shown with `--show-observations` and never fails a run.
+- **`BAS-LLM01-001` (hidden Unicode characters in an instruction file) is now an observation.** The matched characters do not show whether a concealed instruction follows them; a file can list, quote or describe them. The conditions that decide whether to report are unchanged, and the description now asks a reviewer to confirm.
+- **`BAS-ZT4-001` and `BAS-ZT4-002` (user input or a caller-supplied override folded into a system prompt) are now observations.** The matched code does not show where the value comes from. Matching conditions are unchanged.
+- **A rule declared `kind: observation` may now carry a `flow.unproven` clause.** It was previously rejected at load time.
+- **`BAS-LLM10-012` reports a joined or interpolated file path only when a non-literal part of it can be supplied from outside.** A path built only from loop variables, generated names, values read from a local settings file or instance state is no longer reported. A path whose only outside input is a function parameter is an observation unless the function is an agent tool or web route handler, or is called from one in the same file. A path that carries HTTP request data, or a model, tool or retrieval result, is still a defect.
 
 ## [0.6.0] - 2026-10-15
 

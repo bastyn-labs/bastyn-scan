@@ -243,6 +243,10 @@ impl CompiledUnproven {
 /// dominated by a guard is reported, whatever produced it; see
 /// [`super::schema::FlowDef`]'s own docs for when a rule reaches for this
 /// form instead.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each flag is an independent clause a rule opts into in YAML; a state machine would obscure which ones a rule set"
+)]
 struct CompiledFlow {
     /// Which captured metavariable to test.
     variable: String,
@@ -270,6 +274,11 @@ struct CompiledFlow {
     /// instead of the rule's declared kind. See
     /// `crate::flow::graph::FlowGraph::is_passthrough_observation_eligible`.
     passthrough_downgrade: bool,
+    /// When true, a match whose caller input is only function parameters of
+    /// a function no recognized entry point reaches in this file is reported
+    /// as an observation. See
+    /// `crate::flow::graph::FlowGraph::is_unreached_parameter_input`.
+    unreached_parameter_downgrade: bool,
 }
 
 impl CompiledFlow {
@@ -577,11 +586,8 @@ fn compile_flow(def: &RuleDef, any_vars: &HashSet<String>) -> Result<Option<Comp
     if flow.sink.is_some() && flow.passthrough_downgrade {
         return Err(RuleError::PassthroughDowngradeWithSink { id: def.id.clone() });
     }
-    // `flow.unproven` only changes what a defect rule reports: an
-    // observation rule already reports everything it matches as an
-    // observation, so the field would be a no-op there.
-    if def.kind == Kind::Observation && flow.unproven.is_some() {
-        return Err(RuleError::UnprovenOnObservation { id: def.id.clone() });
+    if flow.sink.is_some() && flow.unreached_parameter_downgrade {
+        return Err(RuleError::UnreachedParameterDowngradeWithSink { id: def.id.clone() });
     }
     let unproven = match &flow.unproven {
         None => None,
@@ -627,6 +633,7 @@ fn compile_flow(def: &RuleDef, any_vars: &HashSet<String>) -> Result<Option<Comp
         unproven,
         builtin_callee: flow.builtin_callee,
         passthrough_downgrade: flow.passthrough_downgrade,
+        unreached_parameter_downgrade: flow.unreached_parameter_downgrade,
     }))
 }
 
@@ -1158,14 +1165,16 @@ fn passthrough_observation_for<'r, D: Doc>(
     node: &Node<'r, D>,
     graph: &mut Option<FlowGraph>,
 ) -> bool {
-    if !flow.passthrough_downgrade {
+    if !flow.passthrough_downgrade && !flow.unreached_parameter_downgrade {
         return false;
     }
     let Some(captured) = candidate_env.get_match(&flow.variable) else {
         return false;
     };
     let graph = graph.get_or_insert_with(|| FlowGraph::build(node, FlowLanguage::Python));
-    graph.is_passthrough_observation_eligible(matched, captured)
+    (flow.passthrough_downgrade && graph.is_passthrough_observation_eligible(matched, captured))
+        || (flow.unreached_parameter_downgrade
+            && graph.is_unreached_parameter_input(matched, captured))
 }
 
 /// Whether `exclude.kind` proves the value at `exclude.variable` safe,
@@ -1187,6 +1196,7 @@ fn excluded_by_predicate<'r, D: Doc>(
         ExcludeIfKind::ShellQuoted => graph.is_shell_quoted(captured.node_id()),
         ExcludeIfKind::StdinDispatch => graph.is_stdin_dispatch(captured.node_id()),
         ExcludeIfKind::CliArgument => graph.is_cli_argument(captured.node_id()),
+        ExcludeIfKind::NoCallerInput => !graph.has_caller_input(captured.node_id()),
     })
 }
 

@@ -6,9 +6,14 @@ filename.
 
 import os
 
+from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("opsbot")
+
 RUNBOOK_DIR = "/srv/opsbot/runbooks"
 
 
+@mcp.tool()
 def read_runbook(filename: str) -> str:
     """BAS-LLM10-012: filename is joined onto the runbook directory and
     opened with no realpath/containment check -- '../../etc/passwd'
@@ -17,6 +22,7 @@ def read_runbook(filename: str) -> str:
         return handle.read()
 
 
+@mcp.tool()
 def read_runbook_prefix_checked(filename: str) -> str:
     """BAS-LLM10-012: a check exists, but it is a string-prefix test on
     the unresolved path -- 'runbooks_evil/../../etc/passwd' can still
@@ -29,6 +35,7 @@ def read_runbook_prefix_checked(filename: str) -> str:
         return handle.read()
 
 
+@mcp.tool()
 def read_bundled_asset(asset_root: str, filename: str) -> str:
     """LLM10 (BAS-LLM10-012): asset_root is a function parameter, not a
     module-level __file__-derived constant -- exclude_if: constant_path
@@ -43,6 +50,7 @@ from pathlib import Path
 HERE = Path(__file__).parent
 
 
+@mcp.tool()
 def read_user_file(name: str) -> str:
     """BAS-LLM10-012: HERE is a module-level, __file__-derived constant_path
     built via pathlib, but name is a function parameter interpolated

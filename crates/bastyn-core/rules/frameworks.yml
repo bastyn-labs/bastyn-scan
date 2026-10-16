@@ -202,7 +202,8 @@ rules:
   # kept even without a positive true-positive count from this corpus.
   - id: BAS-LLM10-011
     title: yaml.load without a safe loader
-    kind: defect
+    kind: observation
+    # Reported as an observation: the match alone does not show a real problem.
     severity: high
     confidence: high
     categories: [LLM10]

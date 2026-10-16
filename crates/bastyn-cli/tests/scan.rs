@@ -250,7 +250,7 @@ fn a_skills_references_files_are_inspected_and_listed_in_coverage() {
         ("skills/s/assets/logo.png", "not an image"),
     ]);
 
-    let report = json_scan(dir.path(), &[]);
+    let report = json_scan(dir.path(), &["--show-observations"]);
 
     let injections: Vec<&serde_json::Value> = report["findings"]
         .as_array()
@@ -1261,7 +1261,13 @@ fn mcp_misconfiguration_is_found_in_json_yaml_and_toml() {
         let dir = tree(&[(name, contents)]);
         let stdout = stdout_of({
             let mut c = bastyn(dir.path());
-            c.args(["scan", "--offline", "--format", "json"]);
+            c.args([
+                "scan",
+                "--offline",
+                "--format",
+                "json",
+                "--show-observations",
+            ]);
             c
         });
         let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
@@ -1568,14 +1574,14 @@ fn repeated_scans_produce_byte_identical_output() {
 
 #[test]
 fn the_text_report_groups_defects_by_threat_layer() {
-    // A hardcoded key (ZT1, a missing defense) and eval on a model reply
-    // (LLM10, cross-layer). The point of the grouping is that these do not
-    // read as two equal items in one list.
+    // A provider key committed to a `.env` file (ZT1, a missing defense) and
+    // eval on a model reply (LLM10, cross-layer). The point of the grouping
+    // is that these do not read as two equal items in one list.
     let dir = tree(&[
         ("agents.py", VULNERABLE),
         (
-            "config.py",
-            "OPENAI_API_KEY = \"sk-proj-7f3a9c1e5d8b2a6f4c0e9d7b3a5f8c1e\"\n",
+            ".env",
+            "OPENAI_API_KEY=sk-proj-7f3a9c1e5d8b2a6f4c0e9d7b3a5f8c1e\n",
         ),
     ]);
 
