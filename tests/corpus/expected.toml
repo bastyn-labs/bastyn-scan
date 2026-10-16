@@ -293,7 +293,7 @@ file     = "vulnerable/zt1_static_credentials.py"
 line     = 13
 rule     = "BAS-ZT1-001"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "A real-looking OpenAI key is committed straight into source instead of coming from the environment or a secret manager."
 
@@ -329,7 +329,7 @@ file     = "vulnerable/system_prompt_from_request.py"
 line     = 6
 rule     = "BAS-ZT4-001"
 category = "ZT4"
-kind     = "defect"
+kind     = "observation"
 severity = "high"
 why      = "HTTP request data (request.get_json()) interpolated into a prompt sent in the system role."
 
@@ -374,7 +374,7 @@ file     = "vulnerable/latest/config.py"
 line     = 16
 rule     = "BAS-ZT1-002"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "`latest/` contains the letters \"test\" and is not a test directory. This stays a defect; a substring-based test-path check would silently demote a real hardcoded credential in shipped configuration."
 
@@ -511,6 +511,33 @@ severity = "high"
 why      = "exec(manifest[\"setup_code\"], namespace) -- an explicit globals dict as the second argument. BAS-LLM10-004 used to match only the single-argument shape, so the 2-arg call was silently missed. Reported as a defect: since 2026-09-25 this rule no longer gates on provenance at all, so an untraceable origin (a parameter, or a value one hop from one) no longer downgrades or drops the finding."
 
 [[expect]]
+file     = "vulnerable/llm10_eval_letters_in_class.py"
+line     = 9
+rule     = "BAS-LLM10-004"
+category = "LLM10"
+kind     = "defect"
+severity = "high"
+why      = "eval() on a parameter: the full-match class admits letters and underscores, so the value can still spell names and calls."
+
+[[expect]]
+file     = "vulnerable/llm10_eval_letters_in_class.py"
+line     = 17
+rule     = "BAS-LLM10-004"
+category = "LLM10"
+kind     = "defect"
+severity = "high"
+why      = "eval() on a parameter: re.search without anchors only proves one allowed character is present, not that the whole value is limited."
+
+[[expect]]
+file     = "vulnerable/llm10_eval_letters_in_class.py"
+line     = 25
+rule     = "BAS-LLM10-004"
+category = "LLM10"
+kind     = "defect"
+severity = "high"
+why      = "eval() on a parameter: the checked name is reassigned after the check, so the guard no longer describes the evaluated value."
+
+[[expect]]
 file     = "vulnerable/real_misses/eval_on_untraceable_parameter.py"
 line     = 35
 rule     = "BAS-LLM10-004"
@@ -533,7 +560,7 @@ file     = "vulnerable/real_misses/hardcoded_dict_secrets.py"
 line     = 15
 rule     = "BAS-ZT1-002"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "A live database URL with an inline password, as a dict literal value (\"database_url\": \"postgresql://admin:password123@...\"). BAS-ZT1-002 gates on the value's own credential shape rather than an assignment target."
 
@@ -542,7 +569,7 @@ file     = "vulnerable/real_misses/hardcoded_dict_secrets.py"
 line     = 16
 rule     = "BAS-ZT1-002"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "An admin token as a dict literal value (\"admin_secret\": \"SUPER-SECRET-TOKEN-...\"). Same dict-literal shape as the database_url entry above."
 
@@ -551,7 +578,7 @@ file     = "vulnerable/real_misses/hardcoded_dict_secrets.py"
 line     = 31
 rule     = "BAS-ZT1-002"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "A database URL with an inline password (postgresql://svc:hunter2@...) as a dict literal value. Same shape as the line-15 entry, in the second function."
 
@@ -952,6 +979,10 @@ file = "clean/literal_sinks.py"
 why  = "SQL, a shell command and eval() whose argument is a literal fixed in this file, including under the variable names a model reply is often given. Nothing from outside the file reaches them."
 
 [[expect_none]]
+file = "clean/eval_calculator_charclass.py"
+why  = "eval() on a value that a full match, a filtering substitution or an isdigit() check has limited to digits, whitespace, parentheses and arithmetic operators, which cannot spell a name, attribute or call."
+
+[[expect_none]]
 file = "clean/eval_allowlisted.py"
 why  = "eval() on a parameter that a preceding `not in` check against fixed literals has already limited to two harmless expressions."
 
@@ -1200,7 +1231,7 @@ file     = "vulnerable/zt1_static_credentials.ts"
 line     = 14
 rule     = "BAS-ZT1-003"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "OPENAI_API_KEY is a real-looking sk-proj-... key committed as an exported const literal instead of read from process.env or a secret manager."
 
@@ -1209,7 +1240,7 @@ file     = "vulnerable/zt1_static_credentials.ts"
 line     = 14
 rule     = "BAS-ZT1-011"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "The generic credential-shaped-literal rule reports the exported const statement (column 8), alongside BAS-ZT1-003's report of the string itself (column 31). Both describe the same committed key."
 
@@ -1268,7 +1299,7 @@ file     = "vulnerable/skills/log-analyzer/SKILL.md"
 line     = 20
 rule     = "BAS-SKILL-002"
 category = "LLM01"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "Complete, well-formed frontmatter (name/description/version/permissions all present), but the body's \"example log line\" embeds classic instruction-override phrasing (\"ignore all previous instructions\") plus a sensitive-path reference (~/.ssh/id_rsa) disguised as sample input a log parser would encounter. Proves BAS-SKILL-002 fires on body text even when BAS-SKILL-001 has nothing to say about this file."
 
@@ -1290,7 +1321,7 @@ file     = "vulnerable/skills/word-wrapped-injection/SKILL.md"
 line     = 11
 rule     = "BAS-SKILL-002"
 category = "LLM01"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "Complete, well-formed frontmatter, but the body's classic instruction-override phrase (\"ignore all previous instructions\") is word-wrapped across a Markdown line break (\"IGNORE ALL PREVIOUS\\nINSTRUCTIONS\"). Regression fixture for a bug where scan_phrases only did a literal substring match and silently missed phrases split by a line break; the same phrasing on one line was already caught (see log-analyzer above)."
 
@@ -1308,7 +1339,7 @@ file     = "vulnerable/zt1_secret_shapes.py"
 line     = 21
 rule     = "BAS-ZT1-019"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "an AWS access key ID in the exact AKIA-prefixed shape is hardcoded."
 
@@ -1317,7 +1348,7 @@ file     = "vulnerable/zt1_secret_shapes.py"
 line     = 26
 rule     = "BAS-ZT1-020"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "high"
 why      = "the admin password's environment lookup has a real, source-visible default."
 
@@ -1342,7 +1373,7 @@ file     = "vulnerable/zt1_single_quoted_secrets.py"
 line     = 20
 rule     = "BAS-ZT1-019"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "a real-looking AWS access key ID in the exact AKIA-prefixed shape, single-quoted."
 
@@ -1365,7 +1396,7 @@ file     = "vulnerable/zt1_jwt_credential_shaped_key.py"
 line     = 26
 rule     = "BAS-ZT1-010"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "session_token is a realistic, credential-shaped variable name holding a high-entropy literal -- BAS-ZT1-010's generic credential-shaped-key signal, independent of the value's specific shape."
 
@@ -1693,7 +1724,7 @@ file     = "vulnerable/zt1_url_with_credentials.py"
 line     = 3
 rule     = "BAS-ZT1-010"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "a URL whose userinfo part is a credential is a hardcoded secret"
 
@@ -1702,7 +1733,7 @@ file     = "vulnerable/zt1_url_with_credentials.py"
 line     = 4
 rule     = "BAS-ZT1-010"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "a URL whose query string carries a credential is a hardcoded secret"
 
@@ -1719,7 +1750,7 @@ file     = "vulnerable/zt1_passphrase_password.ts"
 line     = 1
 rule     = "BAS-ZT1-011"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "a passphrase-shaped literal assigned to a password is a hardcoded secret"
 
@@ -1879,3 +1910,51 @@ why      = "The mul tool's description ends in a zero-width space (U+200B), invi
 [[expect_none]]
 file = "clean/ordinary.bastyn-tools.json"
 why  = "A snapshot with an ordinary description, a ZWNJ and a left-to-right mark inside text, an emoji variation selector, and a null description -- none of them hidden-text or instruction phrasing."
+
+[[expect]]
+file     = "observations/key_in_test_file.test.ts"
+line     = 2
+rule     = "BAS-ZT1-003"
+category = "ZT1"
+kind     = "observation"
+severity = "critical"
+why      = "A sk- shaped literal in a .test.ts file is reported as an observation, the default policy for findings in test paths."
+
+# ---------------------------------------------------------------------
+# BAS-ZT1-023 -- a literal with the exact format of a provider token.
+# ---------------------------------------------------------------------
+
+[[expect]]
+file     = "vulnerable/zt1_provider_tokens.py"
+line     = 8
+rule     = "BAS-ZT1-023"
+category = "ZT1"
+kind     = "defect"
+severity = "critical"
+why      = "a GitHub token (prefix, 36 alphanumeric characters) on a name that is not credential-shaped"
+
+[[expect]]
+file     = "vulnerable/zt1_provider_tokens.py"
+line     = 12
+rule     = "BAS-ZT1-023"
+category = "ZT1"
+kind     = "defect"
+severity = "critical"
+why      = "an npm token (prefix, 36 alphanumeric characters) in a dict value whose key is not credential-shaped"
+
+[[expect_none]]
+file = "clean/zt1_provider_token_near_misses.py"
+why  = "an environment read, the word token in setting names, a commit SHA, an image digest, an action pin, token-shaped values inside a URL, a markdown link target and a file path, placeholder bodies, and the published AWS example key"
+
+[[expect_none]]
+file = "clean/interpreter_shell.py"
+why  = "Shell commands made only of sys.executable and literal text, or of a module-level constant, are closed values and are not reported."
+
+[[expect]]
+file     = "vulnerable/llm10_shell_interpreter_with_parameter.py"
+line     = 11
+rule     = "BAS-LLM10-009"
+category = "LLM10"
+kind     = "defect"
+severity = "critical"
+why      = "The command mixes the fixed interpreter path with a caller-supplied package name, so it is not a closed value."

@@ -566,7 +566,7 @@ def handle(ticket):
         Target {
             rule_id: "BAS-ZT4-001",
             var: "SYS",
-            kind: Kind::Defect,
+            kind: Kind::Observation,
             ext: "py",
             // VAR pinned to "user_input", an in-gate value for VAR's own regex.
             template: "\
@@ -584,7 +584,7 @@ def handle(request):
         Target {
             rule_id: "BAS-ZT4-001",
             var: "VAR",
-            kind: Kind::Defect,
+            kind: Kind::Observation,
             ext: "py",
             // SYS pinned to "system_prompt", an in-gate value for SYS's own
             // regex. This rule now gates VAR on `flow:` too -- see the
