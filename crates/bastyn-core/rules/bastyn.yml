@@ -653,20 +653,15 @@ rules:
   #     See tests/corpus/vulnerable/real_misses/path_traversal_variable_then_open.py.
   #   - a function *parameter* joined the same way (os.path.join(root,
   #     filename) where root is a parameter, not a module-level __file__
-  #     chain) still fires even when every call site in the file happens to
-  #     pass a literal for that parameter -- constant_path only proves a
-  #     value from its own definition forward, never across a call
-  #     boundary, and telling "every caller happens to pass a literal
-  #     today" apart from "a real caller-supplied path" would need genuine
-  #     interprocedural call-site analysis, out of scope here (report FP
-  #     #6). Recorded as a known_false_positive (a precision debt, not a
-  #     recall gap -- the rule fires exactly as its own contract says it
-  #     should) at
-  #     tests/corpus/vulnerable/real_misses/path_traversal_parameter_with_literal_callers.py;
-  #     see tests/corpus/vulnerable/llm10_path_traversal_tool.py's
-  #     read_bundled_asset() for the adjacent, correctly-still-firing case
-  #     of a parameter reaching os.path.join with no literal-callers-only
-  #     guarantee at all.
+  #     chain) is not proven constant even when every call site in the file
+  #     passes a literal: that would need genuine interprocedural call-site
+  #     analysis. It is therefore treated by who can reach the function --
+  #     see flow.unreached_parameter_downgrade below. See
+  #     tests/corpus/observations/path_open_helper_parameter.py for a helper
+  #     no entry point reaches (an observation) and
+  #     tests/corpus/vulnerable/llm10_path_traversal_tool.py's
+  #     read_bundled_asset() for the same shape inside an @mcp.tool()
+  #     function (a defect).
   #
   # 2026-09-28: the constant_path fact now also understands pathlib, not
   # just os.path.*: Path(__file__)/pathlib.Path(__file__) as a module-level
@@ -719,9 +714,27 @@ rules:
       ARG: '(os\.path\.join\(|^f["\x27]|["\x27]\s*\+\s*\w|\w\s*\+\s*["\x27])'
     metavariable_not_matches:
       ARG: '^os\.path\.join\(\s*(("([^"\\]|\\.)*")|(''([^''\\]|\\.)*''))(\s*,\s*(("([^"\\]|\\.)*")|(''([^''\\]|\\.)*'')))*\s*\)$'
+    # no_caller_input drops a path none of whose non-literal segments can be
+    # supplied from outside: a loop variable over a local directory listing,
+    # a name produced by a generator or an internal call, a value read from a
+    # fixed local setting. A path-traversal defect needs a segment a caller
+    # or remote party chooses -- a function parameter (not self/cls, not a
+    # click/typer command parameter), HTTP request data, or a catalogued
+    # model, tool or retrieval result -- and one such segment anywhere in the
+    # path is enough, so a mixed path still fires. See
+    # tests/corpus/clean/path_open_no_caller_input.py for the regression proof.
     exclude_if:
       variable: ARG
-      kind: [constant_path, cli_argument]
+      kind: [constant_path, cli_argument, no_caller_input]
+    # A parameter of a function no recognized entry point reaches in this
+    # file (an @mcp.tool()/@app.route()-style handler, or a helper such a
+    # handler calls) is an input from a caller the file does not show:
+    # reported as an observation. HTTP request data and model, tool or
+    # retrieval results are caller-chosen whoever calls the function, so a
+    # path carrying one stays a defect.
+    flow:
+      variable: ARG
+      unreached_parameter_downgrade: true
     description: >
       A file is opened at a path built inline, directly inside the
       open(...) call, by os.path.join, f-string interpolation, or string
@@ -754,7 +767,16 @@ rules:
       <ArgumentParser>.parse_args()/.parse_known_args(), or a click/typer
       command function's own parameter -- not attacker-reachable input; a
       path mixing a CLI-argument segment with any other non-literal segment
-      still fires.
+      still fires. Also excluded when no non-literal segment of the path can
+      be supplied by a caller or remote party -- a function parameter
+      (other than self/cls or a click/typer command parameter), HTTP request
+      data, or a model, tool or retrieval result; a path built only from
+      loop variables, locally generated names or fixed local values is not
+      reported. A path whose only caller input is a function parameter is
+      reported as an observation, not a defect, unless the function is a
+      recognized entry point or one this file calls from one; a path
+      carrying HTTP request data or a model, tool or retrieval result stays
+      a defect.
     remediation: >
       Resolve the joined path with os.path.realpath (not just
       os.path.abspath, which does not follow symlinks) before using it,

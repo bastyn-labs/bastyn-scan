@@ -191,7 +191,7 @@ why      = "command is read from a config file, not stdin -- must still fire aft
 
 [[expect]]
 file     = "vulnerable/llm10_path_traversal_tool.py"
-line     = 16
+line     = 21
 rule     = "BAS-LLM10-012"
 category = "LLM10"
 kind     = "defect"
@@ -200,7 +200,7 @@ why      = "filename is joined onto the runbook directory and opened with no rea
 
 [[expect]]
 file     = "vulnerable/llm10_path_traversal_tool.py"
-line     = 28
+line     = 34
 rule     = "BAS-LLM10-012"
 category = "LLM10"
 kind     = "defect"
@@ -209,7 +209,7 @@ why      = "the containment check tests the unresolved string; the open() call h
 
 [[expect]]
 file     = "vulnerable/llm10_path_traversal_tool.py"
-line     = 37
+line     = 44
 rule     = "BAS-LLM10-012"
 category = "LLM10"
 kind     = "defect"
@@ -218,7 +218,7 @@ why      = "asset_root is a function parameter, not a module-level __file__-deri
 
 [[expect]]
 file     = "vulnerable/llm10_path_traversal_tool.py"
-line     = 52
+line     = 60
 rule     = "BAS-LLM10-012"
 category = "LLM10"
 kind     = "defect"
@@ -227,7 +227,7 @@ why      = "HERE is a module-level, pathlib Path(__file__)-derived constant_path
 
 [[expect]]
 file     = "vulnerable/llm10_path_traversal_tool.py"
-line     = 69
+line     = 77
 rule     = "BAS-LLM10-012"
 category = "LLM10"
 kind     = "defect"
@@ -689,12 +689,6 @@ file     = "vulnerable/real_misses/shell_command_behind_disabled_flag.py"
 line     = 25
 category = "LLM10"
 why      = "subprocess.run(command, shell=True, ...) reachable only when the module-level SECURE_MODE constant is False, which it never is in this file. BAS-LLM10-009 has no constant-propagation or dead-branch analysis, so it cannot prove the branch containing the sink is unreachable in the shipped version."
-
-[[known_false_positive]]
-file     = "vulnerable/real_misses/path_traversal_parameter_with_literal_callers.py"
-line     = 21
-category = "LLM10"
-why      = "os.path.join(RESULTS, name) where name is a bare function parameter, but every call site in the file happens to pass a literal. BAS-LLM10-012's exclude_if: constant_path only resolves a module-level name's own assignment chain; proving every caller of a parameter passes a literal needs interprocedural call-site analysis, which is materially larger and out of scope here."
 
 [[known_false_positive]]
 file     = "vulnerable/real_misses/credential_default_echoed_as_client_credential.py"
@@ -1879,3 +1873,44 @@ why      = "The mul tool's description ends in a zero-width space (U+200B), invi
 [[expect_none]]
 file = "clean/ordinary.bastyn-tools.json"
 why  = "A snapshot with an ordinary description, a ZWNJ and a left-to-right mark inside text, an emoji variation selector, and a null description -- none of them hidden-text or instruction phrasing."
+
+# =====================================================================
+# BAS-LLM10-012: a joined path is reported only when a non-literal segment
+# can be supplied from outside. clean/path_open_no_caller_input.py proves
+# exclude_if: no_caller_input; observations/path_open_helper_parameter.py
+# proves flow.unreached_parameter_downgrade; vulnerable/
+# llm10_path_traversal_entry_reach.py proves the two ways a path stays a
+# defect. See bastyn.yml's comment on BAS-LLM10-012 and
+# crate::flow::graph::FlowGraph::is_unreached_parameter_input.
+# =====================================================================
+
+[[expect_none]]
+file = "clean/path_open_no_caller_input.py"
+why  = "Every non-literal segment of each joined or interpolated path is a loop variable over os.listdir(), a name from uuid4(), a value read from a local settings file, or instance state (self.root) -- none is a function parameter, HTTP request data or a model/tool/retrieval result, so exclude_if: no_caller_input drops each match."
+
+[[expect]]
+file     = "observations/path_open_helper_parameter.py"
+line     = 17
+rule     = "BAS-LLM10-012"
+category = "LLM10"
+kind     = "observation"
+severity = "high"
+why      = "load_result(name): name is a parameter of a function that is not a recognized entry point and that no entry point in this file calls, so the caller is not visible and the match is reported as an observation rather than a defect."
+
+[[expect]]
+file     = "vulnerable/llm10_path_traversal_entry_reach.py"
+line     = 19
+rule     = "BAS-LLM10-012"
+category = "LLM10"
+kind     = "defect"
+severity = "high"
+why      = "load_report(name) is called by the @mcp.tool() function read_report with its own parameter, so the name is agent-chosen and the match stays a defect."
+
+[[expect]]
+file     = "vulnerable/llm10_path_traversal_entry_reach.py"
+line     = 31
+rule     = "BAS-LLM10-012"
+category = "LLM10"
+kind     = "defect"
+severity = "high"
+why      = "request.args[\"name\"] is HTTP request data, caller-chosen whoever calls serve_report(), so the match stays a defect even though the function is not a registered handler."

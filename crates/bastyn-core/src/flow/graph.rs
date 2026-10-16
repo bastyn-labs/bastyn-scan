@@ -168,6 +168,20 @@ pub(crate) struct Resolved {
     /// read. Consumed by an `exclude_if: cli_argument` rule clause
     /// (`BAS-LLM10-009`, `BAS-LLM10-012`).
     pub(crate) cli_argument: bool,
+    /// Whether at least one non-literal segment of this value can be
+    /// supplied by a caller or a remote party: a parameter of a function
+    /// (other than `self`/`cls` or a click/typer command's own parameter),
+    /// HTTP request data, or the result of a catalogued model, tool or
+    /// retrieval call. Unlike the other facts this is an OR across
+    /// segments, because one caller-supplied segment is enough to make the
+    /// whole path caller-influenced. Consumed by an `exclude_if:
+    /// no_caller_input` rule clause (`BAS-LLM10-012`).
+    pub(crate) caller_input: bool,
+    /// The part of [`Resolved::caller_input`] that does not depend on who
+    /// calls an enclosing function: at least one non-literal segment is HTTP
+    /// request data or the result of a catalogued model, tool or retrieval
+    /// call. Also an OR across segments.
+    pub(crate) remote_input: bool,
 }
 
 impl Resolved {
@@ -179,6 +193,8 @@ impl Resolved {
             constant_path: false,
             stdin_dispatch: false,
             cli_argument: false,
+            caller_input: false,
+            remote_input: false,
         }
     }
 
@@ -190,6 +206,8 @@ impl Resolved {
             constant_path: true,
             stdin_dispatch: true,
             cli_argument: true,
+            caller_input: false,
+            remote_input: false,
         }
     }
 
@@ -201,6 +219,8 @@ impl Resolved {
             constant_path: self.constant_path && other.constant_path,
             stdin_dispatch: self.stdin_dispatch && other.stdin_dispatch,
             cli_argument: self.cli_argument && other.cli_argument,
+            caller_input: self.caller_input || other.caller_input,
+            remote_input: self.remote_input || other.remote_input,
         }
     }
 }
@@ -345,6 +365,47 @@ impl FlowGraph {
         self.resolved
             .get(&node_id)
             .is_some_and(|resolved| resolved.cli_argument)
+    }
+
+    /// Whether the value at `node_id` has at least one non-literal segment
+    /// that a caller or remote party can supply: a function parameter
+    /// (other than `self`/`cls` or a click/typer command parameter), HTTP
+    /// request data, or the result of a catalogued model, tool or retrieval
+    /// call. `false` for a node the graph did not examine.
+    pub(crate) fn has_caller_input(&self, node_id: usize) -> bool {
+        self.resolved
+            .get(&node_id)
+            .is_some_and(|resolved| resolved.caller_input)
+    }
+
+    /// Whether the caller input at `arg` (see [`Self::has_caller_input`]) is
+    /// only function parameters, and the function that `matched` sits in is
+    /// neither a recognized entry point (see [`is_entry_point_function`]) nor
+    /// called from one in this file. Such a value comes from a caller this
+    /// file does not show, so whether it is attacker-reachable is not
+    /// provable. `false` when `arg` also carries HTTP request data or a
+    /// model, tool or retrieval result, which is caller-chosen whoever calls
+    /// the function.
+    pub(crate) fn is_unreached_parameter_input<D: Doc>(
+        &self,
+        matched: &Node<'_, D>,
+        arg: &Node<'_, D>,
+    ) -> bool {
+        let Some(resolved) = self.resolved.get(&arg.node_id()) else {
+            return false;
+        };
+        if !resolved.caller_input || resolved.remote_input {
+            return false;
+        }
+        !matched
+            .ancestors()
+            .filter(|ancestor| ancestor.kind() == "function_definition")
+            .any(|function| {
+                is_entry_point_function(&function)
+                    || function.field("name").is_some_and(|name| {
+                        self.entry_point_forwards.contains(name.text().as_ref())
+                    })
+            })
     }
 
     /// Whether a guard dominates the call argument at `node_id`.
@@ -1391,6 +1452,25 @@ const TEMPFILE_CLOSED_CALLEES: &[&str] = &[
 /// unconditionally.
 const TEMPFILE_NAME_ATTRIBUTE_RECEIVERS: &[&str] = &["tempfile.NamedTemporaryFile"];
 
+/// Fields of a web framework's `request` object that hold client-supplied
+/// data. Consumed by [`is_request_data_expression`].
+const REQUEST_DATA_FIELDS: &[&str] = &[
+    "args",
+    "form",
+    "values",
+    "json",
+    "data",
+    "headers",
+    "cookies",
+    "files",
+    "view_args",
+    "GET",
+    "POST",
+    "body",
+    "query_params",
+    "path_params",
+];
+
 /// `Path` method names that take no argument and, called on a receiver
 /// already proven `constant_path`, preserve that fact -- each is a pure
 /// transformation of the path text with no external input.
@@ -1564,6 +1644,7 @@ impl<'r, D: Doc> Analyzer<'r, D> {
         if let Some(parameters) = node.field("parameters") {
             let visible_from = parameters.range().end;
             for name in parameter_names(&parameters) {
+                let caller_input = !cli_command_parameters && !is_self_or_cls(&name);
                 self.scopes[inner]
                     .bindings
                     .entry(name.clone())
@@ -1584,6 +1665,10 @@ impl<'r, D: Doc> Analyzer<'r, D> {
                             // framework, the same trust boundary as
                             // `sys.argv`/`argparse` below.
                             cli_argument: cli_command_parameters,
+                            // `self`/`cls` carry state set elsewhere in the
+                            // class, not a value a caller passes in.
+                            caller_input,
+                            remote_input: false,
                         }),
                         scope: inner,
                         branches: Vec::new(),
@@ -1881,6 +1966,10 @@ impl<'r, D: Doc> Analyzer<'r, D> {
                 self.resolve(&object, scope, depth + 1)
             });
         answer.closed = answer.closed || closed_here;
+        if is_request_data_expression(node) {
+            answer.caller_input = true;
+            answer.remote_input = true;
+        }
         if attribute_text.as_deref() == Some("name")
             && matches!(&answer.prov, Prov::Call { callee } if TEMPFILE_NAME_ATTRIBUTE_RECEIVERS.contains(&callee.as_str()))
         {
@@ -2031,6 +2120,7 @@ impl<'r, D: Doc> Analyzer<'r, D> {
                             })
                         })
                 }));
+        let (caller_input, remote_input) = self.call_caller_input(node, scope, depth, &callee);
         Resolved {
             closed: callee == "type"
                 || self.tempfile_args_safe(node, scope, depth, callee.as_str(), |resolved| {
@@ -2041,8 +2131,76 @@ impl<'r, D: Doc> Analyzer<'r, D> {
             constant_path,
             stdin_dispatch,
             cli_argument,
+            caller_input,
+            remote_input,
             prov: Prov::Call { callee },
         }
+    }
+
+    /// The `(caller_input, remote_input)` facts of a call. A catalogued
+    /// model, tool, retrieval or HTTP-request call returns a value a remote
+    /// party can shape, and so does `.parse_args()` on a Flask-RESTful style
+    /// `RequestParser` (it parses HTTP request data). A whitelisted path
+    /// function (`os.path.join`, `Path`, ...) passes through whatever any of
+    /// its arguments carry.
+    fn call_caller_input(
+        &mut self,
+        node: &Node<'r, D>,
+        scope: usize,
+        depth: usize,
+        callee: &str,
+    ) -> (bool, bool) {
+        let remote_source = classify_source(callee).is_some_and(|kind| {
+            matches!(
+                kind,
+                SourceKind::HttpRequest
+                    | SourceKind::ModelOutput
+                    | SourceKind::ToolOutput
+                    | SourceKind::RetrievedContext
+            )
+        }) || self.is_request_parser_parse(node, scope, depth);
+        let mut caller_input = remote_source;
+        let mut remote_input = remote_source;
+        if PATH_CONST_FUNCTIONS.contains(&callee)
+            && let Some(arguments) = node.field("arguments")
+        {
+            for argument in arguments.named_children() {
+                let value = if argument.kind() == "keyword_argument" {
+                    argument.field("value")
+                } else {
+                    Some(argument)
+                };
+                if let Some(value) = value {
+                    let inner = self.resolve(&value, scope, depth + 1);
+                    caller_input |= inner.caller_input;
+                    remote_input |= inner.remote_input;
+                }
+            }
+        }
+        (caller_input, remote_input)
+    }
+
+    /// `<receiver>.parse_args()` / `.parse_known_args()` where the receiver
+    /// resolves to a call to a `RequestParser` constructor (Flask-RESTful and
+    /// flask-restx), which parses HTTP request data rather than the process's
+    /// own command line.
+    fn is_request_parser_parse(&mut self, node: &Node<'r, D>, scope: usize, depth: usize) -> bool {
+        let Some(function) = node.field("function") else {
+            return false;
+        };
+        if function.kind() != "attribute"
+            || !function.field("attribute").is_some_and(|attribute| {
+                matches!(attribute.text().as_ref(), "parse_args" | "parse_known_args")
+            })
+        {
+            return false;
+        }
+        function.field("object").is_some_and(|object| {
+            matches!(
+                self.resolve(&object, scope, depth + 1).prov,
+                Prov::Call { callee } if callee.rsplit('.').next() == Some("RequestParser")
+            )
+        })
     }
 
     /// `"...{}".format(a, b=c)`: the result is text built from the template
@@ -2271,6 +2429,8 @@ impl<'r, D: Doc> Analyzer<'r, D> {
                     constant_path: previous.constant_path && resolved.constant_path,
                     stdin_dispatch: previous.stdin_dispatch && resolved.stdin_dispatch,
                     cli_argument: previous.cli_argument && resolved.cli_argument,
+                    caller_input: previous.caller_input || resolved.caller_input,
+                    remote_input: previous.remote_input || resolved.remote_input,
                 },
                 Some(previous) => Resolved {
                     prov: Prov::Unknown,
@@ -2279,6 +2439,8 @@ impl<'r, D: Doc> Analyzer<'r, D> {
                     constant_path: previous.constant_path && resolved.constant_path,
                     stdin_dispatch: previous.stdin_dispatch && resolved.stdin_dispatch,
                     cli_argument: previous.cli_argument && resolved.cli_argument,
+                    caller_input: previous.caller_input || resolved.caller_input,
+                    remote_input: previous.remote_input || resolved.remote_input,
                 },
             });
         }
@@ -2372,6 +2534,18 @@ fn sys_argv_resolved<D: Doc>(node: &Node<'_, D>) -> Option<Resolved> {
         cli_argument: true,
         ..Resolved::unknown()
     })
+}
+
+/// Whether `node` reads a field of the web framework's `request` object that
+/// carries client-supplied data: `request.args`, `request.form`,
+/// `request.json`, `request.GET`, `request.query_params`, ...
+fn is_request_data_expression<D: Doc>(node: &Node<'_, D>) -> bool {
+    let path = callee_path(node);
+    let mut segments = path.split('.');
+    segments.next() == Some("request")
+        && segments
+            .next()
+            .is_some_and(|field| REQUEST_DATA_FIELDS.contains(&field))
 }
 
 /// The dotted path of a callee, as written, with subscripts and call results

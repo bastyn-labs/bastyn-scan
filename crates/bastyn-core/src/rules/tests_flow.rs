@@ -957,3 +957,129 @@ def run_shell_cmd(cmd):
         .expect("a BAS-LLM10-009 finding");
     assert_eq!(finding.kind, crate::finding::Kind::Defect);
 }
+
+/// The kind of the `BAS-LLM10-012` finding in `source`, if there is one.
+fn path_open_kind(source: &str) -> Option<crate::finding::Kind> {
+    let rules = RuleSet::embedded().unwrap();
+    scan_source(&rules, Path::new("app/files.py"), source)
+        .iter()
+        .find(|f| f.rule_id == "BAS-LLM10-012")
+        .map(|f| f.kind)
+}
+
+/// A path whose non-literal segments are a loop variable over a directory
+/// listing carries no caller input, so nothing is reported.
+#[test]
+fn path_open_with_a_loop_variable_is_not_reported() {
+    let source = "\
+import os
+
+
+def read_all(root_dir):
+    for name in os.listdir('/srv/data'):
+        with open(os.path.join('/srv/data', name)) as handle:
+            handle.read()
+";
+    assert_eq!(path_open_kind(source), None);
+}
+
+/// A name from an internal call and instance state are not caller input.
+#[test]
+fn path_open_with_a_generated_name_or_instance_state_is_not_reported() {
+    let generated = "\
+import os
+import uuid
+
+
+def write(payload):
+    name = f'{uuid.uuid4().hex}.txt'
+    open(os.path.join('/srv/data', name), 'w').write(payload)
+";
+    assert_eq!(path_open_kind(generated), None);
+    let instance = "\
+import os
+
+
+class Store:
+    def read(self):
+        return open(os.path.join(self.root, 'index.txt')).read()
+";
+    assert_eq!(path_open_kind(instance), None);
+}
+
+/// A parameter of a helper that no entry point reaches is an observation.
+#[test]
+fn path_open_with_an_unreached_helper_parameter_is_an_observation() {
+    let source = "\
+import os
+
+
+def load(name):
+    return open(os.path.join('/srv/data', name)).read()
+";
+    assert_eq!(
+        path_open_kind(source),
+        Some(crate::finding::Kind::Observation)
+    );
+}
+
+/// The same parameter inside an `@mcp.tool()` function is a defect.
+#[test]
+fn path_open_with_an_entry_point_parameter_is_a_defect() {
+    let source = "\
+import os
+
+
+@mcp.tool()
+def load(name):
+    return open(os.path.join('/srv/data', name)).read()
+";
+    assert_eq!(path_open_kind(source), Some(crate::finding::Kind::Defect));
+}
+
+/// A helper an entry point calls with its own parameter is a defect.
+#[test]
+fn path_open_in_a_helper_called_from_an_entry_point_is_a_defect() {
+    let source = "\
+import os
+
+
+def load(name):
+    return open(os.path.join('/srv/data', name)).read()
+
+
+@app.route('/file')
+def serve(name):
+    return load(name)
+";
+    assert_eq!(path_open_kind(source), Some(crate::finding::Kind::Defect));
+}
+
+/// HTTP request data stays a defect even outside a registered handler.
+#[test]
+fn path_open_with_request_data_is_a_defect() {
+    let source = "\
+import os
+from flask import request
+
+
+def serve():
+    return open(os.path.join('/srv/data', request.args['name'])).read()
+";
+    assert_eq!(path_open_kind(source), Some(crate::finding::Kind::Defect));
+}
+
+/// One caller-chosen segment among local ones is enough.
+#[test]
+fn path_open_mixing_a_local_and_a_request_segment_is_a_defect() {
+    let source = "\
+import os
+from flask import request
+
+
+def serve():
+    base = os.getcwd()
+    return open(f'{base}/{request.form[\"name\"]}').read()
+";
+    assert_eq!(path_open_kind(source), Some(crate::finding::Kind::Defect));
+}

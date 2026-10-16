@@ -286,4 +286,19 @@ pub enum RuleError {
         /// The offending rule's id.
         id: String,
     },
+
+    /// A rule declared both `flow.sink` and `flow.unreached_parameter_downgrade`.
+    ///
+    /// Rejected for the same reason as [`Self::PassthroughDowngradeWithSink`]:
+    /// the wrapper-sink pass builds its findings outside the per-node match
+    /// loop the downgrade is computed in.
+    #[error(
+        "rule `{id}`: `flow.sink` and `flow.unreached_parameter_downgrade` cannot be combined; \
+         the wrapper-sink pass `flow.sink` enables builds its findings outside the per-node \
+         match loop `unreached_parameter_downgrade` is computed in"
+    )]
+    UnreachedParameterDowngradeWithSink {
+        /// The offending rule's id.
+        id: String,
+    },
 }

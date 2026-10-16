@@ -205,6 +205,10 @@ pub(crate) struct RuleDef {
 /// untested combination no shipped rule needs.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each flag is an independent clause a rule opts into in YAML; a state machine would obscure which ones a rule set"
+)]
 pub(crate) struct FlowDef {
     /// The captured metavariable whose provenance is tested.
     ///
@@ -259,6 +263,13 @@ pub(crate) struct FlowDef {
     /// `crate::flow::graph::FlowGraph::is_passthrough_observation_eligible`.
     #[serde(default)]
     pub(crate) passthrough_downgrade: bool,
+    /// When true, a match whose captured value carries caller input only
+    /// through function parameters, inside a function that is neither a
+    /// recognized entry point nor called from one in this file, is reported
+    /// as `Kind::Observation` instead of the rule's declared kind. See
+    /// `crate::flow::graph::FlowGraph::is_unreached_parameter_input`.
+    #[serde(default)]
+    pub(crate) unreached_parameter_downgrade: bool,
 }
 
 /// A `flow.unproven:` clause, exactly as written in YAML.
@@ -316,7 +327,8 @@ fn default_flow_variable() -> String {
 /// exclude_if:
 ///   variable: ARG          # which capture to test; defaults to ARG
 ///   kind: constant_path    # closed_value | constant_path | shell_quoted |
-///                          # stdin_dispatch, one kind or a list of them
+///                          # stdin_dispatch | cli_argument | no_caller_input,
+///                          # one kind or a list of them
 /// ```
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -372,4 +384,9 @@ pub(crate) enum ExcludeIfKind {
     /// `.parse_known_args()`, or a `click`/`typer` command function's own
     /// parameter.
     CliArgument,
+    /// The value has no non-literal segment that a caller or remote party
+    /// can supply: no function parameter (other than `self`/`cls` or a
+    /// click/typer command parameter), no HTTP request data, and no result
+    /// of a catalogued model, tool or retrieval call.
+    NoCallerInput,
 }

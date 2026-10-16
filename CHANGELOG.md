@@ -10,6 +10,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **`bastyn scan --inspect-remote` captures the tool lists of the public https MCP servers named in config files, checks them with `BAS-MCP-010` to `-012`, and lists every server it did not contact under Coverage gaps.** It is off by default, `--offline` overrides it, and `--save-snapshots <DIR>` keeps the captures.
 
+### Changed
+
+- **`BAS-LLM10-012` reports a joined or interpolated file path only when a non-literal part of it can be supplied from outside.** A path built only from loop variables, generated names, values read from a local settings file or instance state is no longer reported. A path whose only outside input is a function parameter is an observation unless the function is an agent tool or web route handler, or is called from one in the same file. A path that carries HTTP request data, or a model, tool or retrieval result, is still a defect.
+
 ## [0.6.0] - 2026-10-15
 
 ### Added
