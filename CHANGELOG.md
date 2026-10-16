@@ -8,6 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **`BAS-SKILL-010` reports text, or a shell or PowerShell script inside a skill folder, that downloads code from a URL and runs it with no check.** It reads a download piped or passed into a shell (`curl URL | sh`, `bash <(curl URL)`, `irm URL | iex`), a script or executable downloaded to a file and then run, and a cloned repository whose `install`, `setup` or `bootstrap` script is then run. It needs a literal `http` or `https` URL, and is skipped when a checksum, signature or review step sits between the download and the run, or when the text refuses or quotes the command. Observation only.
+- **Shell and PowerShell scripts (`.sh`, `.bash`, `.zsh`, `.ps1`) inside a skill folder are now read**, and are listed in the new `coverage.skill_script_files` (omitted from the JSON when empty) instead of `coverage.skill_unanalysed`.
 - **`bastyn scan --inspect-remote` captures the tool lists of the public https MCP servers named in config files, checks them with `BAS-MCP-010` to `-012`, and lists every server it did not contact under Coverage gaps.** It is off by default, `--offline` overrides it, and `--save-snapshots <DIR>` keeps the captures.
 
 ## [0.6.0] - 2026-10-15

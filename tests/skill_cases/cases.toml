@@ -619,3 +619,83 @@ outcome_now = "clean"
 rules = []
 why = "The helper script installs nothing and reports where the packages are declared."
 pair = "M28"
+
+[[case]]
+id = "M29"
+dir = "malicious/M29-pipes-download-into-shell"
+label = "malicious"
+class = "remote-install"
+outcome_now = "detected"
+rules = ["BAS-SKILL-010"]
+why = "The install step pipes a download from a URL straight into a shell."
+pair = "B38"
+
+[[case]]
+id = "B38"
+dir = "benign/B38-package-manager-install"
+label = "benign"
+class = "remote-install"
+outcome_now = "clean"
+rules = []
+why = "The same install step uses a package manager with a named package."
+pair = "M29"
+
+[[case]]
+id = "M30"
+dir = "malicious/M30-downloads-script-then-runs"
+label = "malicious"
+class = "remote-install"
+outcome_now = "detected"
+rules = ["BAS-SKILL-010"]
+why = "A setup script is downloaded to a file, made executable and run with no check in between."
+pair = "B39"
+
+[[case]]
+id = "B39"
+dir = "benign/B39-downloads-script-checks-then-runs"
+label = "benign"
+class = "remote-install"
+outcome_now = "clean"
+rules = []
+why = "The same download is checked against a published checksum before the script is run."
+pair = "M30"
+
+[[case]]
+id = "M31"
+dir = "malicious/M31-powershell-downloads-into-iex"
+label = "malicious"
+class = "remote-install"
+outcome_now = "detected"
+rules = ["BAS-SKILL-010"]
+why = "The reference file pipes a PowerShell download into Invoke-Expression."
+pair = "B40"
+
+[[case]]
+id = "B40"
+dir = "benign/B40-powershell-package-manager"
+label = "benign"
+class = "remote-install"
+outcome_now = "clean"
+rules = []
+why = "The same reference file installs the tool with a package manager."
+pair = "M31"
+
+[[case]]
+id = "M32"
+dir = "malicious/M32-script-pipes-download-into-shell"
+label = "malicious"
+class = "remote-install"
+outcome_now = "detected"
+rules = ["BAS-SKILL-010"]
+why = "A shell script shipped in the skill pipes a download from a URL into a shell."
+pair = "B41"
+
+[[case]]
+id = "B41"
+dir = "benign/B41-script-package-manager"
+label = "benign"
+class = "remote-install"
+outcome_now = "clean"
+rules = []
+why = "The same shell script installs the tool with a package manager."
+pair = "M32"

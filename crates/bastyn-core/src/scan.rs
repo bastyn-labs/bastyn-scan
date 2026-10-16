@@ -210,30 +210,17 @@ pub fn scan_observed(
     })
 }
 
-/// The folders of a skill whose manifest sits at the scan root that belong to
-/// the skill. The rest of the tree is the repository's own.
-const ROOT_SKILL_FOLDERS: [&str; 3] = ["scripts", "references", "assets"];
-
 /// Walked files under a skill directory that no analyser claims, as display
 /// paths, sorted bytewise and listed once even when skill folders nest.
 ///
 /// A file that was analysed but could not be read is not here: it is already
 /// in `coverage.skipped`.
 fn skill_unanalysed(files: &[PathBuf], skill_dirs: &BTreeSet<PathBuf>) -> Vec<String> {
-    let in_skill = |relative: &Path| {
-        skill_dirs.iter().any(|dir| {
-            if dir.as_os_str().is_empty() {
-                ROOT_SKILL_FOLDERS
-                    .iter()
-                    .any(|folder| relative.starts_with(folder))
-            } else {
-                relative.starts_with(dir)
-            }
-        })
-    };
     let listed: BTreeSet<String> = files
         .iter()
-        .filter(|relative| !is_analysed(relative, skill_dirs) && in_skill(relative))
+        .filter(|relative| {
+            !is_analysed(relative, skill_dirs) && skill::is_in_skill(relative, skill_dirs)
+        })
         .map(|relative| display_path(relative))
         .collect();
     listed.into_iter().collect()
@@ -278,6 +265,7 @@ fn is_analysed(relative: &Path, skill_dirs: &BTreeSet<PathBuf>) -> bool {
         || instructions::is_instruction_file(relative)
         || skill::is_skill_file(relative)
         || skill::is_skill_reference(relative, skill_dirs)
+        || skill::is_skill_script(relative, skill_dirs)
         || dotenv::is_env_file(relative)
 }
 
@@ -308,6 +296,7 @@ struct Covered {
     mcp_manifest: bool,
     skill_file: bool,
     skill_reference: bool,
+    skill_script: bool,
     instruction_file: bool,
 }
 
@@ -409,6 +398,9 @@ fn analyse(
             if file.covered.skill_reference {
                 out.coverage.skill_reference_files.push(path.clone());
             }
+            if file.covered.skill_script {
+                out.coverage.skill_script_files.push(path.clone());
+            }
             if file.covered.instruction_file {
                 out.coverage.instruction_files.push(path);
             }
@@ -472,6 +464,7 @@ fn analyse_file(
     let instruction_file = instructions::is_instruction_file(relative);
     let skill_file = skill::is_skill_file(relative);
     let skill_reference = skill::is_skill_reference(relative, skill_dirs);
+    let skill_script = skill::is_skill_script(relative, skill_dirs);
     let env_file = dotenv::is_env_file(relative);
     if source_language.is_none()
         && !mcp_config
@@ -481,6 +474,7 @@ fn analyse_file(
         && !instruction_file
         && !skill_file
         && !skill_reference
+        && !skill_script
         && !env_file
     {
         return None;
@@ -577,6 +571,7 @@ fn analyse_file(
     out.covered_path = Some(display_path(relative));
     out.covered.skill_file = skill_file;
     out.covered.skill_reference = skill_reference;
+    out.covered.skill_script = skill_script;
     // An MCP config, a `SKILL.md` and a skill reference file are also
     // instruction files internally, but each is listed only under its own
     // kind, never twice.
@@ -601,11 +596,14 @@ fn analyse_file(
     }
 
     if skill_reference {
-        // A text file in a skill's `references/` folder: read by the agent
-        // when the skill points to it, so it gets the phrase and hidden
-        // Unicode checks, but not the manifest checks.
+        // A text file of a skill, read by the agent when the skill points to
+        // it: the phrase and hidden Unicode checks, not the manifest checks.
         out.findings
             .extend(skill::inspect_reference(relative, &contents));
+    }
+
+    if skill_script {
+        out.findings.extend(skill::scan_script(relative, &contents));
     }
 
     if env_file {
@@ -1155,7 +1153,7 @@ mod tests {
         let manifest = "---\nname: s\ndescription: does s\n---\nBody.\n";
         let dir = tree(&[
             ("skills/s/SKILL.md", manifest),
-            ("skills/s/scripts/run.sh", "echo hi\n"),
+            ("skills/s/scripts/run.bat", "echo hi\n"),
             ("skills/s/assets/a.png", "x"),
             ("skills/s/scripts/tool.py", "print(1)\n"),
             ("skills/other.txt", "outside any skill\n"),
@@ -1168,7 +1166,7 @@ mod tests {
 
         assert_eq!(
             report.coverage.skill_unanalysed,
-            ["skills/s/assets/a.png", "skills/s/scripts/run.sh"]
+            ["skills/s/assets/a.png", "skills/s/scripts/run.bat"]
         );
         assert!(
             report

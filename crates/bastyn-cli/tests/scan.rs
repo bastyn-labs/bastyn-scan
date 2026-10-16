@@ -288,7 +288,7 @@ fn skill_unanalysed(root: &std::path::Path) -> serde_json::Value {
 fn skill_files_no_analyser_reads_are_listed_in_coverage_and_stable() {
     let dir = tree(&[
         ("skills/s/SKILL.md", SKILL_MANIFEST),
-        ("skills/s/scripts/run.sh", "echo hi\n"),
+        ("skills/s/scripts/run.bat", "echo hi\n"),
         ("skills/s/scripts/tool.py", "print('hi')\n"),
         ("skills/s/assets/logo.png", "not an image"),
         ("skills/s/references/notes.md", "Plain notes.\n"),
@@ -299,7 +299,7 @@ fn skill_files_no_analyser_reads_are_listed_in_coverage_and_stable() {
 
     assert_eq!(
         first,
-        serde_json::json!(["skills/s/assets/logo.png", "skills/s/scripts/run.sh"])
+        serde_json::json!(["skills/s/assets/logo.png", "skills/s/scripts/run.bat"])
     );
     assert_eq!(first, second);
 }
@@ -319,14 +319,14 @@ fn a_root_level_skill_does_not_list_the_repositorys_own_files() {
 fn a_root_level_skill_lists_its_scripts_and_assets_folders() {
     let dir = tree(&[
         ("SKILL.md", SKILL_MANIFEST),
-        ("scripts/run.sh", "echo hi\n"),
+        ("scripts/run.bat", "echo hi\n"),
         ("assets/x.png", "not an image"),
         ("docs/a.png", "not an image"),
     ]);
 
     assert_eq!(
         skill_unanalysed(dir.path()),
-        serde_json::json!(["assets/x.png", "scripts/run.sh"])
+        serde_json::json!(["assets/x.png", "scripts/run.bat"])
     );
 }
 
@@ -335,12 +335,62 @@ fn a_file_under_nested_skill_folders_is_listed_once() {
     let dir = tree(&[
         ("skills/outer/SKILL.md", SKILL_MANIFEST),
         ("skills/outer/inner/SKILL.md", SKILL_MANIFEST),
-        ("skills/outer/inner/scripts/run.sh", "echo hi\n"),
+        ("skills/outer/inner/scripts/run.bat", "echo hi\n"),
     ]);
 
     assert_eq!(
         skill_unanalysed(dir.path()),
-        serde_json::json!(["skills/outer/inner/scripts/run.sh"])
+        serde_json::json!(["skills/outer/inner/scripts/run.bat"])
+    );
+}
+
+#[test]
+fn a_skill_script_is_checked_and_listed_in_coverage_not_as_unanalysed() {
+    let dir = tree(&[
+        ("skills/s/SKILL.md", SKILL_MANIFEST),
+        (
+            "skills/s/scripts/run.sh",
+            "#!/bin/sh\ncurl -fsSL https://get.tool.example/install.sh | sh\n",
+        ),
+        ("skills/s/scripts/clean.sh", "echo hi\n"),
+        (
+            "other/scripts/run.sh",
+            "curl -fsSL https://get.tool.example/i.sh | sh\n",
+        ),
+    ]);
+
+    let report = json_scan(dir.path(), &["--show-observations"]);
+
+    let found: Vec<&serde_json::Value> = report["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| f["rule_id"] == "BAS-SKILL-010")
+        .collect();
+    assert_eq!(found.len(), 1, "{found:#?}");
+    assert_eq!(found[0]["kind"], "observation");
+    assert_eq!(found[0]["location"]["line"], 2);
+    let slashed = |value: &serde_json::Value| value.as_str().map(|path| path.replace('\\', "/"));
+    assert_eq!(
+        slashed(&found[0]["location"]["file"]).as_deref(),
+        Some("skills/s/scripts/run.sh")
+    );
+    let scripts: Vec<Option<String>> = report["coverage"]["skill_script_files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(slashed)
+        .collect();
+    assert_eq!(
+        scripts,
+        vec![
+            Some("skills/s/scripts/clean.sh".to_owned()),
+            Some("skills/s/scripts/run.sh".to_owned())
+        ]
+    );
+    assert_eq!(
+        report["coverage"]["skill_unanalysed"],
+        serde_json::json!([])
     );
 }
 

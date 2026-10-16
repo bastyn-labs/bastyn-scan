@@ -12,7 +12,7 @@ The figures it prints are measured on these synthetic cases only. They are not d
 
 ## Pairs (twins)
 
-Every malicious case (M01..M14 and M17..M28) has one benign twin (B11..B23, B25..B37; B11 twins M01, and so on), linked by `pair` in `cases.toml` on both sides. A twin is a copy of the malicious skill (same frontmatter shape, files, pattern position and length) with the minimal edit that makes it benign, so the only difference is intent. Twins carry a different `name:` but the same topic.
+Every malicious case (M01..M14 and M17..M32) has one benign twin (B11..B23, B25..B41; B11 twins M01, and so on), linked by `pair` in `cases.toml` on both sides. A twin is a copy of the malicious skill (same frontmatter shape, files, pattern position and length) with the minimal edit that makes it benign, so the only difference is intent. Twins carry a different `name:` but the same topic.
 
 | pair | the minimal edit in the twin |
 |---|---|
@@ -42,6 +42,10 @@ Every malicious case (M01..M14 and M17..M28) has one benign twin (B11..B23, B25.
 | M26 / B35 | the instruction to download and follow remote instructions becomes a sentence saying never to do that |
 | M27 / B36 | the template file beside the manifest changes the diagram security level from loose to strict |
 | M28 / B37 | the helper script installs nothing and reports that the packages are declared in the manifest |
+| M29 / B38 | the install step pipes a download into a shell; in the twin it is a package manager install |
+| M30 / B39 | a downloaded script is run straight away; in the twin a checksum command runs in between |
+| M31 / B40 | a reference file pipes a PowerShell download into `iex`; in the twin it is a package manager install |
+| M32 / B41 | a shipped shell script pipes a download into a shell; in the twin it is a package manager install |
 
 M23..M26 and M28 are recorded known misses (`outcome_now = "missed"`): the scanner does not analyse JavaScript dataflow (M23, M24, M28) and has no precise textual trigger for the wording in M25 and M26. Their twins are `clean`, so these pairs are not separated.
 

@@ -1879,3 +1879,20 @@ why      = "The mul tool's description ends in a zero-width space (U+200B), invi
 [[expect_none]]
 file = "clean/ordinary.bastyn-tools.json"
 why  = "A snapshot with an ordinary description, a ZWNJ and a left-to-right mark inside text, an emoji variation selector, and a null description -- none of them hidden-text or instruction phrasing."
+
+# =====================================================================
+# skills/ -- a download piped into a shell (BAS-SKILL-010, observation)
+# =====================================================================
+
+[[expect]]
+file     = "observations/skills/remote-installer/SKILL.md"
+line     = 11
+rule     = "BAS-SKILL-010"
+category = "LLM04"
+kind     = "observation"
+severity = "medium"
+why      = "The install step pipes a download from a URL straight into a shell, so whatever the address serves at that moment runs unchecked."
+
+[[expect_none]]
+file = "clean/skills/checked-installer/SKILL.md"
+why  = "Installs with a package manager, or downloads the installer and checks it against a checksum before running it, and states that a download is never piped into a shell; none of the three is an unchecked download-and-run."

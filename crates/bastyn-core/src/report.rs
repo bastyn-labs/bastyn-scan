@@ -147,14 +147,18 @@ pub struct Coverage {
     /// read is listed under `skipped` instead. Sorted by path.
     #[serde(default)]
     pub skill_reference_files: Vec<String>,
+    /// Shell and PowerShell scripts (`.sh`, `.bash`, `.zsh`, `.ps1`) inside a
+    /// skill folder that were read and checked for commands that download code
+    /// and run it. Omitted from the JSON when empty. Sorted by path.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skill_script_files: Vec<String>,
     /// Agent instruction files (such as `AGENTS.md`) that were read. An MCP
     /// configuration is listed only under `mcp_manifests`, and a `SKILL.md`
     /// only under `skill_files`, never here.
     #[serde(default)]
     pub instruction_files: Vec<String>,
     /// Files located under a skill directory (the directory of a `SKILL.md`,
-    /// at any depth) that no analyser reads, such as shell scripts and
-    /// images. They are present in the skill but were not inspected. A file
+    /// at any depth) that no analyser reads, such as images. They are present in the skill but were not inspected. A file
     /// that was skipped as unreadable or unparseable is listed under `skipped`
     /// only. For a `SKILL.md` at the scan root, only the `scripts/`,
     /// `references/` and `assets/` folders are considered, never the rest of
