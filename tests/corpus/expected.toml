@@ -329,7 +329,7 @@ file     = "vulnerable/system_prompt_from_request.py"
 line     = 6
 rule     = "BAS-ZT4-001"
 category = "ZT4"
-kind     = "defect"
+kind     = "observation"
 severity = "high"
 why      = "HTTP request data (request.get_json()) interpolated into a prompt sent in the system role."
 
@@ -509,6 +509,33 @@ category = "LLM10"
 kind     = "defect"
 severity = "high"
 why      = "exec(manifest[\"setup_code\"], namespace) -- an explicit globals dict as the second argument. BAS-LLM10-004 used to match only the single-argument shape, so the 2-arg call was silently missed. Reported as a defect: since 2026-09-25 this rule no longer gates on provenance at all, so an untraceable origin (a parameter, or a value one hop from one) no longer downgrades or drops the finding."
+
+[[expect]]
+file     = "vulnerable/llm10_eval_letters_in_class.py"
+line     = 9
+rule     = "BAS-LLM10-004"
+category = "LLM10"
+kind     = "defect"
+severity = "high"
+why      = "eval() on a parameter: the full-match class admits letters and underscores, so the value can still spell names and calls."
+
+[[expect]]
+file     = "vulnerable/llm10_eval_letters_in_class.py"
+line     = 17
+rule     = "BAS-LLM10-004"
+category = "LLM10"
+kind     = "defect"
+severity = "high"
+why      = "eval() on a parameter: re.search without anchors only proves one allowed character is present, not that the whole value is limited."
+
+[[expect]]
+file     = "vulnerable/llm10_eval_letters_in_class.py"
+line     = 25
+rule     = "BAS-LLM10-004"
+category = "LLM10"
+kind     = "defect"
+severity = "high"
+why      = "eval() on a parameter: the checked name is reassigned after the check, so the guard no longer describes the evaluated value."
 
 [[expect]]
 file     = "vulnerable/real_misses/eval_on_untraceable_parameter.py"
@@ -952,6 +979,10 @@ file = "clean/literal_sinks.py"
 why  = "SQL, a shell command and eval() whose argument is a literal fixed in this file, including under the variable names a model reply is often given. Nothing from outside the file reaches them."
 
 [[expect_none]]
+file = "clean/eval_calculator_charclass.py"
+why  = "eval() on a value that a full match, a filtering substitution or an isdigit() check has limited to digits, whitespace, parentheses and arithmetic operators, which cannot spell a name, attribute or call."
+
+[[expect_none]]
 file = "clean/eval_allowlisted.py"
 why  = "eval() on a parameter that a preceding `not in` check against fixed literals has already limited to two harmless expressions."
 
@@ -1268,7 +1299,7 @@ file     = "vulnerable/skills/log-analyzer/SKILL.md"
 line     = 20
 rule     = "BAS-SKILL-002"
 category = "LLM01"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "Complete, well-formed frontmatter (name/description/version/permissions all present), but the body's \"example log line\" embeds classic instruction-override phrasing (\"ignore all previous instructions\") plus a sensitive-path reference (~/.ssh/id_rsa) disguised as sample input a log parser would encounter. Proves BAS-SKILL-002 fires on body text even when BAS-SKILL-001 has nothing to say about this file."
 
@@ -1290,7 +1321,7 @@ file     = "vulnerable/skills/word-wrapped-injection/SKILL.md"
 line     = 11
 rule     = "BAS-SKILL-002"
 category = "LLM01"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "Complete, well-formed frontmatter, but the body's classic instruction-override phrase (\"ignore all previous instructions\") is word-wrapped across a Markdown line break (\"IGNORE ALL PREVIOUS\\nINSTRUCTIONS\"). Regression fixture for a bug where scan_phrases only did a literal substring match and silently missed phrases split by a line break; the same phrasing on one line was already caught (see log-analyzer above)."
 
@@ -1888,3 +1919,42 @@ category = "ZT1"
 kind     = "observation"
 severity = "critical"
 why      = "A sk- shaped literal in a .test.ts file is reported as an observation, the default policy for findings in test paths."
+
+# ---------------------------------------------------------------------
+# BAS-ZT1-023 -- a literal with the exact format of a provider token.
+# ---------------------------------------------------------------------
+
+[[expect]]
+file     = "vulnerable/zt1_provider_tokens.py"
+line     = 8
+rule     = "BAS-ZT1-023"
+category = "ZT1"
+kind     = "defect"
+severity = "critical"
+why      = "a GitHub token (prefix, 36 alphanumeric characters) on a name that is not credential-shaped"
+
+[[expect]]
+file     = "vulnerable/zt1_provider_tokens.py"
+line     = 12
+rule     = "BAS-ZT1-023"
+category = "ZT1"
+kind     = "defect"
+severity = "critical"
+why      = "an npm token (prefix, 36 alphanumeric characters) in a dict value whose key is not credential-shaped"
+
+[[expect_none]]
+file = "clean/zt1_provider_token_near_misses.py"
+why  = "an environment read, the word token in setting names, a commit SHA, an image digest, an action pin, token-shaped values inside a URL, a markdown link target and a file path, placeholder bodies, and the published AWS example key"
+
+[[expect_none]]
+file = "clean/interpreter_shell.py"
+why  = "Shell commands made only of sys.executable and literal text, or of a module-level constant, are closed values and are not reported."
+
+[[expect]]
+file     = "vulnerable/llm10_shell_interpreter_with_parameter.py"
+line     = 11
+rule     = "BAS-LLM10-009"
+category = "LLM10"
+kind     = "defect"
+severity = "critical"
+why      = "The command mixes the fixed interpreter path with a caller-supplied package name, so it is not a closed value."
