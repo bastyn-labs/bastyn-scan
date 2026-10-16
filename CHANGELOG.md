@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-16
+
 ### Changed
 
 - **`BAS-INFRA-006` (credential in a Dockerfile or Compose file) is now an observation.** The matched code does not show whether the value is a real credential. Severity is unchanged.
@@ -679,7 +681,8 @@ single point in time. This paragraph prints no number, because it drifts every t
 added. See [Measured coverage](README.md#measured-coverage) for the current count, always derived
 from the gate rather than typed in here.
 
-[Unreleased]: https://github.com/BASTYN-labs/bastyn-scan/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/BASTYN-labs/bastyn-scan/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/BASTYN-labs/bastyn-scan/releases/tag/v0.7.0
 [0.6.0]: https://github.com/BASTYN-labs/bastyn-scan/releases/tag/v0.6.0
 [0.5.0]: https://github.com/BASTYN-labs/bastyn-scan/releases/tag/v0.5.0
 [0.4.0]: https://github.com/BASTYN-labs/bastyn-scan/releases/tag/v0.4.0
