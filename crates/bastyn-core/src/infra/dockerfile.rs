@@ -356,7 +356,8 @@ fn check_credential_literals(instructions: &[Instruction], relative_path: &Path)
                 .map(move |(name, value)| Finding {
                     rule_id: "BAS-INFRA-006".to_owned(),
                     title: "Hardcoded credential in deployment configuration".to_owned(),
-                    kind: Kind::Defect,
+                    // Reported as an observation: the match alone does not show a real problem.
+                    kind: Kind::Observation,
                     severity: credential::credential_severity(&name, &value),
                     confidence: Confidence::High,
                     categories: vec![Category::Zt1],

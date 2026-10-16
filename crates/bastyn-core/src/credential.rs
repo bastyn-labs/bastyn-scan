@@ -310,7 +310,7 @@ fn looks_high_entropy(value: &str) -> bool {
 /// but calling both `Critical` teaches a reader to stop trusting the
 /// severity field. This is a severity split only: every hardcoded
 /// credential [`is_hardcoded_credential_value`] accepts is still reported,
-/// unconditionally, as a `BAS-INFRA-006` defect.
+/// unconditionally, as a `BAS-INFRA-006` observation.
 ///
 /// Two independent signals, either enough to call it [`Severity::Critical`]:
 /// the *name* identifies a cloud-provider/platform credential

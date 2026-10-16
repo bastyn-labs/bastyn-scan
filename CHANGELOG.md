@@ -8,11 +8,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- **`BAS-INFRA-006` (credential in a Dockerfile or Compose file) is now an observation.** The matched code does not show whether the value is a real credential. Severity is unchanged.
+- **`BAS-MCP-002` (MCP server reached over plaintext HTTP without authentication) and `BAS-MCP-005` (MCP server launched from a registry without a version pin) are now observations.** The server configuration alone does not show where the host or the launched package comes from.
+- **`BAS-ZT2-002` (wildcard tool grant) is now an observation.** The matched code does not show where the grant comes from or what the tools can reach.
+- **`BAS-LLM10-011` (`yaml.load` without a safe loader) is now an observation.** The call alone does not show where the loaded text comes from.
+- **`BAS-LLM10-017` (SQL built by interpolation reaches execution) is now an observation.** The matched code does not show where the interpolated value comes from.
+
+These rules still run. Their findings appear with `--show-observations` and never fail a run.
+
+- **The hardcoded-credential rules `BAS-ZT1-001`, `-002`, `-003`, `-010`, `-011`, `-019`, `-020` and `-022`, and `BAS-LLM02-001`, `-002`, `-004` and `-005`, now report observations instead of defects.** The matched code does not show where a value comes from or whether it is a live credential. The rules still run, with unchanged matching, severities and remediation text, and their findings appear with `--show-observations`. They no longer count toward `--fail-on`.
+- **`BAS-ZT1-003` follows the default test-path policy.** A key-shaped literal in a test file is an observation like any other finding in a test path.
+
+- **`BAS-LLM10-004` no longer reports `eval()`/`exec()` on a value limited to digits, whitespace, parentheses and `+ - * / % .` operators.** The limit can be a `re.fullmatch` (or anchored `re.match`/`re.search`) on a single character class that rejects the value, a `re.sub` that deletes every character outside such a class, an `isdigit()`/`isdecimal()` check, or an `all(c in "..." for c in value)` check. A class that admits a letter, underscore, quote or bracket other than a parenthesis does not count, and the check stops counting if the value is reassigned afterwards.
+
 - **`BAS-LLM10-009` no longer reports a shell command made only of literal text, module-level constants and `sys.executable`.** A command with any other non-literal part is reported as before.
 
 ### Added
 
 - **`bastyn scan --inspect-remote` captures the tool lists of the public https MCP servers named in config files, checks them with `BAS-MCP-010` to `-012`, and lists every server it did not contact under Coverage gaps.** It is off by default, `--offline` overrides it, and `--save-snapshots <DIR>` keeps the captures.
+- **`BAS-ZT1-023` reports a committed provider token by its exact format.** It covers GitHub tokens, AWS access key IDs, Google API keys, npm tokens and Stripe live secret keys, in any source, instruction, MCP or `.env` file. It never keys on a variable name, and skips values inside URLs, Markdown link targets, file paths, digests and placeholders.
 
 ### Changed
 

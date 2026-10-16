@@ -813,7 +813,8 @@ rules:
 
   - id: BAS-LLM10-017
     title: Unparameterized query built by interpolation reaches SQL execution
-    kind: defect
+    kind: observation
+    # Reported as an observation: the match alone does not show a real problem.
     severity: critical
     confidence: high
     categories: [LLM10]
@@ -1078,7 +1079,8 @@ rules:
   # cannot match anything but a provider key.
   - id: BAS-ZT1-001
     title: Hardcoded API key
-    kind: defect
+    kind: observation
+    # Reported as an observation: the match alone does not show a real problem.
     severity: critical
     confidence: high
     categories: [ZT1]
@@ -1249,7 +1251,8 @@ rules:
 
   - id: BAS-ZT1-002
     title: Hardcoded credential in a collection literal
-    kind: defect
+    kind: observation
+    # Reported as an observation: the match alone does not show a real problem.
     severity: critical
     confidence: high
     categories: [ZT1]
@@ -1670,7 +1673,8 @@ rules:
 
   - id: BAS-ZT1-003
     title: Hardcoded API key (JS/TS)
-    kind: defect
+    kind: observation
+    # Reported as an observation: the match alone does not show a real problem.
     severity: critical
     confidence: high
     categories: [ZT1]
@@ -1680,8 +1684,8 @@ rules:
     # the literal sits -- a `const`, an object-literal property value, a
     # function argument -- without needing a variant per surrounding shape.
     #
-    # Reports through test paths for the same reason as BAS-ZT1-001.
-    in_test_paths: report
+    # A key-shaped literal in a test path is reported as an observation, the
+    # default policy: test code holds sample keys for the code under test.
     any:
       - '"$SECRET"'
       - "'$SECRET'"
@@ -1995,7 +1999,8 @@ rules:
 
   - id: BAS-ZT2-002
     title: Wildcard tool grant in agent-construction code (JS)
-    kind: defect
+    kind: observation
+    # Reported as an observation: the match alone does not show a real problem.
     severity: high
     confidence: high
     categories: [ZT2]

@@ -29,6 +29,7 @@ mod dotenv;
 mod error;
 pub(crate) mod flow;
 mod generated;
+mod provider_token;
 mod test_path;
 mod walk;
 

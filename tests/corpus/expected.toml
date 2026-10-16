@@ -97,7 +97,7 @@ file     = "vulnerable/llm10_eval_on_model_reply.py"
 line     = 59
 rule     = "BAS-LLM10-017"
 category = "LLM10"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "The f-string interpolates both a traced model reply and an untraced parameter directly into raw SQL, with neither bound as a query parameter -- an unconditional SQL-injection shape regardless of provenance, exactly BAS-LLM10-017's designed scope (the same unconditional-composition philosophy BAS-LLM10-009 applies to shell commands: it reports the composition itself, independent of whatever precedes or feeds it). BAS-LLM10-003's mixed-origin downgrade to an observation exists for cases where provenance can't be established and that absence matters for calibrating confidence; here it doesn't need to, since parameterization is the correct fix regardless of source. BAS-LLM10-003 still fires and is preserved as a secondary_rule_ids entry on this finding, so nothing is silently lost -- it just isn't the top-level displayed finding at this line."
 
@@ -239,7 +239,7 @@ file     = "vulnerable/llm10_unparameterized_sql_tool.py"
 line     = 9
 rule     = "BAS-LLM10-017"
 category = "LLM10"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "the query is f-string interpolated directly into execute(), with no variable-name gate needed."
 
@@ -266,7 +266,7 @@ file     = "vulnerable/llm10_unparameterized_sql_tool.py"
 line     = 53
 rule     = "BAS-LLM10-017"
 category = "LLM10"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "find_ticket_by_customer(): customer_email is interpolated as a query *value* into a WHERE clause, not a schema identifier -- the 2026-09-24 metavariable_not_matches DDL-keyword exclusion (added to fix all 4 BAS-LLM10-017 report false positives, all PRAGMA table_info(...)/ALTER TABLE ... ADD COLUMN ... identifier interpolation) only excludes an f-string that opens with PRAGMA/ALTER TABLE/CREATE TABLE/DROP TABLE/CREATE INDEX/DROP INDEX, and this f-string opens with SELECT, so it must still fire -- proving the exclusion does not over-broadly swallow real injections."
 
@@ -275,7 +275,7 @@ file     = "vulnerable/llm10_unparameterized_sql_tool.py"
 line     = 65
 rule     = "BAS-LLM10-017"
 category = "LLM10"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "materialize_filtered_table(): opens with CREATE TABLE, but also interpolates user_filter as a real query value (quoted with the opposite quote character) in a WHERE clause appended to the DDL. Regression fixture for a 2026-09-24 final-review finding: the DDL exclusion originally checked only the opening keyword, not whether a quoted value literal appeared anywhere in the rest of the string, so this was wrongly excluded before the exclusion regex was tightened to require the whole remainder be quote-free."
 
@@ -284,7 +284,7 @@ file     = "vulnerable/llm10_unparameterized_sql_tool.py"
 line     = 73
 rule     = "BAS-LLM10-017"
 category = "LLM10"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "add_column_with_default(): opens with ALTER TABLE, but DEFAULT '{user_filter}' interpolates a real query value, not a schema identifier -- the ADD COLUMN counterpart to materialize_filtered_table() above, same 2026-09-24 regression and same tightened exclusion."
 
@@ -293,7 +293,7 @@ file     = "vulnerable/zt1_static_credentials.py"
 line     = 13
 rule     = "BAS-ZT1-001"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "A real-looking OpenAI key is committed straight into source instead of coming from the environment or a secret manager."
 
@@ -374,7 +374,7 @@ file     = "vulnerable/latest/config.py"
 line     = 16
 rule     = "BAS-ZT1-002"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "`latest/` contains the letters \"test\" and is not a test directory. This stays a defect; a substring-based test-path check would silently demote a real hardcoded credential in shipped configuration."
 
@@ -511,6 +511,33 @@ severity = "high"
 why      = "exec(manifest[\"setup_code\"], namespace) -- an explicit globals dict as the second argument. BAS-LLM10-004 used to match only the single-argument shape, so the 2-arg call was silently missed. Reported as a defect: since 2026-09-25 this rule no longer gates on provenance at all, so an untraceable origin (a parameter, or a value one hop from one) no longer downgrades or drops the finding."
 
 [[expect]]
+file     = "vulnerable/llm10_eval_letters_in_class.py"
+line     = 9
+rule     = "BAS-LLM10-004"
+category = "LLM10"
+kind     = "defect"
+severity = "high"
+why      = "eval() on a parameter: the full-match class admits letters and underscores, so the value can still spell names and calls."
+
+[[expect]]
+file     = "vulnerable/llm10_eval_letters_in_class.py"
+line     = 17
+rule     = "BAS-LLM10-004"
+category = "LLM10"
+kind     = "defect"
+severity = "high"
+why      = "eval() on a parameter: re.search without anchors only proves one allowed character is present, not that the whole value is limited."
+
+[[expect]]
+file     = "vulnerable/llm10_eval_letters_in_class.py"
+line     = 25
+rule     = "BAS-LLM10-004"
+category = "LLM10"
+kind     = "defect"
+severity = "high"
+why      = "eval() on a parameter: the checked name is reassigned after the check, so the guard no longer describes the evaluated value."
+
+[[expect]]
 file     = "vulnerable/real_misses/eval_on_untraceable_parameter.py"
 line     = 35
 rule     = "BAS-LLM10-004"
@@ -533,7 +560,7 @@ file     = "vulnerable/real_misses/hardcoded_dict_secrets.py"
 line     = 15
 rule     = "BAS-ZT1-002"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "A live database URL with an inline password, as a dict literal value (\"database_url\": \"postgresql://admin:password123@...\"). BAS-ZT1-002 gates on the value's own credential shape rather than an assignment target."
 
@@ -542,7 +569,7 @@ file     = "vulnerable/real_misses/hardcoded_dict_secrets.py"
 line     = 16
 rule     = "BAS-ZT1-002"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "An admin token as a dict literal value (\"admin_secret\": \"SUPER-SECRET-TOKEN-...\"). Same dict-literal shape as the database_url entry above."
 
@@ -551,7 +578,7 @@ file     = "vulnerable/real_misses/hardcoded_dict_secrets.py"
 line     = 31
 rule     = "BAS-ZT1-002"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "A database URL with an inline password (postgresql://svc:hunter2@...) as a dict literal value. Same shape as the line-15 entry, in the second function."
 
@@ -722,7 +749,7 @@ file     = "vulnerable/zt3_container_boundary/Dockerfile"
 line     = 14
 rule     = "BAS-INFRA-006"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "high"
 why      = "ENV DB_PASSWORD=Sup3rWeakPass! is a hardcoded credential, not shaped like a provider key -- BAS-INFRA-002's `sk-`-shaped gate does not cover it, and the two rules must not double-report the same literal. Reported high, not critical: credential_severity() rates a value that is neither high-entropy nor named for a cloud provider as high."
 
@@ -776,7 +803,7 @@ file     = "vulnerable/zt3_container_boundary/docker-compose.yml"
 line     = 11
 rule     = "BAS-INFRA-006"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "high"
 why      = "MYSQL_PASSWORD=password in the list form of environment: is a real weak default. Reported high, not critical: credential_severity() rates a value that is neither high-entropy nor named for a cloud provider as high."
 
@@ -785,7 +812,7 @@ file     = "vulnerable/zt3_container_boundary/docker-compose.yml"
 line     = 12
 rule     = "BAS-INFRA-006"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "SERVICE_TOKEN=svc_4f8a1c62d90b47e3a5216fbc8de07394 -- a hardcoded token that does not match any vendor-specific key shape (BAS-ZT1-003's `sk-` gate), caught here because the generic check gates on the credential-shaped variable name, not the value's own shape."
 
@@ -794,7 +821,7 @@ file     = "vulnerable/zt3_container_boundary/docker-compose.yml"
 line     = 18
 rule     = "BAS-INFRA-006"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "high"
 why      = "MYSQL_ROOT_PASSWORD: 'aa123456' in the mapping form of environment: -- format parity with the list-form findings above. MYSQL_DATABASE on the line below must not be flagged. Reported high, not critical: credential_severity() rates a value that is neither high-entropy nor named for a cloud provider as high."
 
@@ -807,7 +834,7 @@ file     = "mcp/streamable_http/mcp.json"
 line     = 4
 rule     = "BAS-MCP-002"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "high"
 why      = "The opsbot-metrics server is reached over plain http:// with no Authorization/token/key in headers or env."
 
@@ -829,7 +856,7 @@ file     = "mcp/stdio_two/mcp.json"
 line     = 5
 rule     = "BAS-MCP-005"
 category = "LLM04"
-kind     = "defect"
+kind     = "observation"
 severity = "high"
 why      = "The opsbot-logs server is launched from a package registry (npx -y / uvx) with no version pin, so what runs can change without a change to this repository."
 
@@ -838,7 +865,7 @@ file     = "mcp/stdio_two/mcp.json"
 line     = 9
 rule     = "BAS-MCP-005"
 category = "LLM04"
-kind     = "defect"
+kind     = "observation"
 severity = "high"
 why      = "The opsbot-runbooks server is launched from a package registry (npx -y / uvx) with no version pin, so what runs can change without a change to this repository."
 
@@ -856,7 +883,7 @@ file     = "mcp/stdio_two/mcp.yaml"
 line     = 6
 rule     = "BAS-MCP-005"
 category = "LLM04"
-kind     = "defect"
+kind     = "observation"
 severity = "high"
 why      = "The opsbot-logs server is launched from a package registry (npx -y / uvx) with no version pin, so what runs can change without a change to this repository."
 
@@ -865,7 +892,7 @@ file     = "mcp/stdio_two/mcp.yaml"
 line     = 11
 rule     = "BAS-MCP-005"
 category = "LLM04"
-kind     = "defect"
+kind     = "observation"
 severity = "high"
 why      = "The opsbot-runbooks server is launched from a package registry (npx -y / uvx) with no version pin, so what runs can change without a change to this repository."
 
@@ -883,7 +910,7 @@ file     = "mcp/stdio_two/mcp.toml"
 line     = 3
 rule     = "BAS-MCP-005"
 category = "LLM04"
-kind     = "defect"
+kind     = "observation"
 severity = "high"
 why      = "The opsbot-logs server is launched from a package registry (npx -y / uvx) with no version pin, so what runs can change without a change to this repository."
 
@@ -892,7 +919,7 @@ file     = "mcp/stdio_two/mcp.toml"
 line     = 7
 rule     = "BAS-MCP-005"
 category = "LLM04"
-kind     = "defect"
+kind     = "observation"
 severity = "high"
 why      = "The opsbot-runbooks server is launched from a package registry (npx -y / uvx) with no version pin, so what runs can change without a change to this repository."
 
@@ -944,6 +971,10 @@ why  = "eval on a literal, approx_tokens / token_count / api_key_name / max_toke
 [[expect_none]]
 file = "clean/literal_sinks.py"
 why  = "SQL, a shell command and eval() whose argument is a literal fixed in this file, including under the variable names a model reply is often given. Nothing from outside the file reaches them."
+
+[[expect_none]]
+file = "clean/eval_calculator_charclass.py"
+why  = "eval() on a value that a full match, a filtering substitution or an isdigit() check has limited to digits, whitespace, parentheses and arithmetic operators, which cannot spell a name, attribute or call."
 
 [[expect_none]]
 file = "clean/eval_allowlisted.py"
@@ -1038,7 +1069,7 @@ file     = "vulnerable/zt3_isolation/mcp.json"
 line     = 5
 rule     = "BAS-MCP-005"
 category = "LLM04"
-kind     = "defect"
+kind     = "observation"
 severity = "high"
 why      = "An MCP server launched via npx with no version pin resolves to whatever the registry serves at run time, inside the agent's trust boundary."
 
@@ -1194,7 +1225,7 @@ file     = "vulnerable/zt1_static_credentials.ts"
 line     = 14
 rule     = "BAS-ZT1-003"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "OPENAI_API_KEY is a real-looking sk-proj-... key committed as an exported const literal instead of read from process.env or a secret manager."
 
@@ -1203,7 +1234,7 @@ file     = "vulnerable/zt1_static_credentials.ts"
 line     = 14
 rule     = "BAS-ZT1-011"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "The generic credential-shaped-literal rule reports the exported const statement (column 8), alongside BAS-ZT1-003's report of the string itself (column 31). Both describe the same committed key."
 
@@ -1212,7 +1243,7 @@ file     = "vulnerable/zt2_wildcard_tool_grant.ts"
 line     = 30
 rule     = "BAS-ZT2-002"
 category = "ZT2"
-kind     = "defect"
+kind     = "observation"
 severity = "high"
 why      = "buildOpsbotAgent() calls selectToolsForAgent(ALL_TOOLS, \"*\") -- OpsBot's own internal tool-scoping layer -- with the wildcard grant, positionally rather than as a named allowedTools= keyword argument, which is the ordinary call shape in TS/JS and a further structural difference from the Python rule's named-kwarg pattern. Promoted from known_gap on 2026-08-28: BAS-ZT2-002 gates on the called function's own name (tool|agent-shaped) rather than the grant value's name, which is what let it close this gap without the false-positive blowup an ungated `$FN($$$PRE, \"*\")` produced across 65 real repositories (CORS headers, glob patterns, route wildcards)."
 
@@ -1302,7 +1333,7 @@ file     = "vulnerable/zt1_secret_shapes.py"
 line     = 21
 rule     = "BAS-ZT1-019"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "an AWS access key ID in the exact AKIA-prefixed shape is hardcoded."
 
@@ -1311,7 +1342,7 @@ file     = "vulnerable/zt1_secret_shapes.py"
 line     = 26
 rule     = "BAS-ZT1-020"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "high"
 why      = "the admin password's environment lookup has a real, source-visible default."
 
@@ -1336,7 +1367,7 @@ file     = "vulnerable/zt1_single_quoted_secrets.py"
 line     = 20
 rule     = "BAS-ZT1-019"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "a real-looking AWS access key ID in the exact AKIA-prefixed shape, single-quoted."
 
@@ -1359,7 +1390,7 @@ file     = "vulnerable/zt1_jwt_credential_shaped_key.py"
 line     = 26
 rule     = "BAS-ZT1-010"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "session_token is a realistic, credential-shaped variable name holding a high-entropy literal -- BAS-ZT1-010's generic credential-shaped-key signal, independent of the value's specific shape."
 
@@ -1687,7 +1718,7 @@ file     = "vulnerable/zt1_url_with_credentials.py"
 line     = 3
 rule     = "BAS-ZT1-010"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "a URL whose userinfo part is a credential is a hardcoded secret"
 
@@ -1696,7 +1727,7 @@ file     = "vulnerable/zt1_url_with_credentials.py"
 line     = 4
 rule     = "BAS-ZT1-010"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "a URL whose query string carries a credential is a hardcoded secret"
 
@@ -1713,7 +1744,7 @@ file     = "vulnerable/zt1_passphrase_password.ts"
 line     = 1
 rule     = "BAS-ZT1-011"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "a passphrase-shaped literal assigned to a password is a hardcoded secret"
 
@@ -1731,7 +1762,7 @@ file     = "mcp/shell_wrapper/mcp.json"
 line     = 5
 rule     = "BAS-MCP-005"
 category = "LLM04"
-kind     = "defect"
+kind     = "observation"
 severity = "high"
 why      = "The same inner npx launch has no version pin."
 
@@ -1914,6 +1945,41 @@ category = "LLM10"
 kind     = "defect"
 severity = "high"
 why      = "request.args[\"name\"] is HTTP request data, caller-chosen whoever calls serve_report(), so the match stays a defect even though the function is not a registered handler."
+
+[[expect]]
+file     = "observations/key_in_test_file.test.ts"
+line     = 2
+rule     = "BAS-ZT1-003"
+category = "ZT1"
+kind     = "observation"
+severity = "critical"
+why      = "A sk- shaped literal in a .test.ts file is reported as an observation, the default policy for findings in test paths."
+
+# ---------------------------------------------------------------------
+# BAS-ZT1-023 -- a literal with the exact format of a provider token.
+# ---------------------------------------------------------------------
+
+[[expect]]
+file     = "vulnerable/zt1_provider_tokens.py"
+line     = 8
+rule     = "BAS-ZT1-023"
+category = "ZT1"
+kind     = "defect"
+severity = "critical"
+why      = "a GitHub token (prefix, 36 alphanumeric characters) on a name that is not credential-shaped"
+
+[[expect]]
+file     = "vulnerable/zt1_provider_tokens.py"
+line     = 12
+rule     = "BAS-ZT1-023"
+category = "ZT1"
+kind     = "defect"
+severity = "critical"
+why      = "an npm token (prefix, 36 alphanumeric characters) in a dict value whose key is not credential-shaped"
+
+[[expect_none]]
+file = "clean/zt1_provider_token_near_misses.py"
+why  = "an environment read, the word token in setting names, a commit SHA, an image digest, an action pin, token-shaped values inside a URL, a markdown link target and a file path, placeholder bodies, and the published AWS example key"
 
 [[expect_none]]
 file = "clean/interpreter_shell.py"
