@@ -511,6 +511,33 @@ severity = "high"
 why      = "exec(manifest[\"setup_code\"], namespace) -- an explicit globals dict as the second argument. BAS-LLM10-004 used to match only the single-argument shape, so the 2-arg call was silently missed. Reported as a defect: since 2026-09-25 this rule no longer gates on provenance at all, so an untraceable origin (a parameter, or a value one hop from one) no longer downgrades or drops the finding."
 
 [[expect]]
+file     = "vulnerable/llm10_eval_letters_in_class.py"
+line     = 9
+rule     = "BAS-LLM10-004"
+category = "LLM10"
+kind     = "defect"
+severity = "high"
+why      = "eval() on a parameter: the full-match class admits letters and underscores, so the value can still spell names and calls."
+
+[[expect]]
+file     = "vulnerable/llm10_eval_letters_in_class.py"
+line     = 17
+rule     = "BAS-LLM10-004"
+category = "LLM10"
+kind     = "defect"
+severity = "high"
+why      = "eval() on a parameter: re.search without anchors only proves one allowed character is present, not that the whole value is limited."
+
+[[expect]]
+file     = "vulnerable/llm10_eval_letters_in_class.py"
+line     = 25
+rule     = "BAS-LLM10-004"
+category = "LLM10"
+kind     = "defect"
+severity = "high"
+why      = "eval() on a parameter: the checked name is reassigned after the check, so the guard no longer describes the evaluated value."
+
+[[expect]]
 file     = "vulnerable/real_misses/eval_on_untraceable_parameter.py"
 line     = 35
 rule     = "BAS-LLM10-004"
@@ -950,6 +977,10 @@ why  = "eval on a literal, approx_tokens / token_count / api_key_name / max_toke
 [[expect_none]]
 file = "clean/literal_sinks.py"
 why  = "SQL, a shell command and eval() whose argument is a literal fixed in this file, including under the variable names a model reply is often given. Nothing from outside the file reaches them."
+
+[[expect_none]]
+file = "clean/eval_calculator_charclass.py"
+why  = "eval() on a value that a full match, a filtering substitution or an isdigit() check has limited to digits, whitespace, parentheses and arithmetic operators, which cannot spell a name, attribute or call."
 
 [[expect_none]]
 file = "clean/eval_allowlisted.py"

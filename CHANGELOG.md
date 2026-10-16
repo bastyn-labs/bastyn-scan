@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **`BAS-LLM10-004` no longer reports `eval()`/`exec()` on a value limited to digits, whitespace, parentheses and `+ - * / % .` operators.** The limit can be a `re.fullmatch` (or anchored `re.match`/`re.search`) on a single character class that rejects the value, a `re.sub` that deletes every character outside such a class, an `isdigit()`/`isdecimal()` check, or an `all(c in "..." for c in value)` check. A class that admits a letter, underscore, quote or bracket other than a parenthesis does not count, and the check stops counting if the value is reassigned afterwards.
+
 ### Added
 
 - **`bastyn scan --inspect-remote` captures the tool lists of the public https MCP servers named in config files, checks them with `BAS-MCP-010` to `-012`, and lists every server it did not contact under Coverage gaps.** It is off by default, `--offline` overrides it, and `--save-snapshots <DIR>` keeps the captures.
