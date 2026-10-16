@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **The hardcoded-credential rules `BAS-ZT1-001`, `-002`, `-003`, `-010`, `-011`, `-019`, `-020` and `-022`, and `BAS-LLM02-001`, `-002`, `-004` and `-005`, now report observations instead of defects.** The matched code does not show where a value comes from or whether it is a live credential. The rules still run, with unchanged matching, severities and remediation text, and their findings appear with `--show-observations`. They no longer count toward `--fail-on`.
+- **`BAS-ZT1-003` follows the default test-path policy.** A key-shaped literal in a test file is an observation like any other finding in a test path.
+
 ### Added
 
 - **`bastyn scan --inspect-remote` captures the tool lists of the public https MCP servers named in config files, checks them with `BAS-MCP-010` to `-012`, and lists every server it did not contact under Coverage gaps.** It is off by default, `--offline` overrides it, and `--save-snapshots <DIR>` keeps the captures.

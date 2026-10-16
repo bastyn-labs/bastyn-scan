@@ -22,7 +22,7 @@
 //! | Rule | What it flags | Kind | Category |
 //! | --- | --- | --- | --- |
 //! | `BAS-ZT1-021` | A provider API key literal (the `sk-...` shape) in a committed `.env` value | defect | `ZT1` |
-//! | `BAS-ZT1-022` | Any other credential-shaped literal in a committed `.env` value | defect | `ZT1` |
+//! | `BAS-ZT1-022` | Any other credential-shaped literal in a committed `.env` value | observation | `ZT1` |
 //!
 //! # Reusing the Dockerfile/Compose credential logic
 //!
@@ -242,7 +242,8 @@ fn finding_for(relative_path: &Path, assignment: &Assignment) -> Option<Finding>
         return Some(Finding {
             rule_id: "BAS-ZT1-022".to_owned(),
             title: "Hardcoded credential committed to a .env file".to_owned(),
-            kind: Kind::Defect,
+            // Reported as an observation: the match alone does not show a real problem.
+            kind: Kind::Observation,
             severity: credential::credential_severity(key, value),
             confidence: Confidence::High,
             categories: vec![Category::Zt1],
@@ -331,8 +332,10 @@ mod tests {
         assert_eq!(findings.len(), 2, "{findings:#?}");
         assert_eq!(findings[0].rule_id, "BAS-ZT1-021");
         assert_eq!(findings[0].location.line, 1);
+        assert_eq!(findings[0].kind, Kind::Defect);
         assert_eq!(findings[1].rule_id, "BAS-ZT1-022");
         assert_eq!(findings[1].location.line, 2);
+        assert_eq!(findings[1].kind, Kind::Observation);
     }
 
     #[test]

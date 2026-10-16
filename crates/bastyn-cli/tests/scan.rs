@@ -1518,14 +1518,14 @@ fn repeated_scans_produce_byte_identical_output() {
 
 #[test]
 fn the_text_report_groups_defects_by_threat_layer() {
-    // A hardcoded key (ZT1, a missing defense) and eval on a model reply
-    // (LLM10, cross-layer). The point of the grouping is that these do not
-    // read as two equal items in one list.
+    // A provider key committed to a `.env` file (ZT1, a missing defense) and
+    // eval on a model reply (LLM10, cross-layer). The point of the grouping
+    // is that these do not read as two equal items in one list.
     let dir = tree(&[
         ("agents.py", VULNERABLE),
         (
-            "config.py",
-            "OPENAI_API_KEY = \"sk-proj-7f3a9c1e5d8b2a6f4c0e9d7b3a5f8c1e\"\n",
+            ".env",
+            "OPENAI_API_KEY=sk-proj-7f3a9c1e5d8b2a6f4c0e9d7b3a5f8c1e\n",
         ),
     ]);
 

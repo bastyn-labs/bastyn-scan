@@ -293,7 +293,7 @@ file     = "vulnerable/zt1_static_credentials.py"
 line     = 13
 rule     = "BAS-ZT1-001"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "A real-looking OpenAI key is committed straight into source instead of coming from the environment or a secret manager."
 
@@ -374,7 +374,7 @@ file     = "vulnerable/latest/config.py"
 line     = 16
 rule     = "BAS-ZT1-002"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "`latest/` contains the letters \"test\" and is not a test directory. This stays a defect; a substring-based test-path check would silently demote a real hardcoded credential in shipped configuration."
 
@@ -533,7 +533,7 @@ file     = "vulnerable/real_misses/hardcoded_dict_secrets.py"
 line     = 15
 rule     = "BAS-ZT1-002"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "A live database URL with an inline password, as a dict literal value (\"database_url\": \"postgresql://admin:password123@...\"). BAS-ZT1-002 gates on the value's own credential shape rather than an assignment target."
 
@@ -542,7 +542,7 @@ file     = "vulnerable/real_misses/hardcoded_dict_secrets.py"
 line     = 16
 rule     = "BAS-ZT1-002"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "An admin token as a dict literal value (\"admin_secret\": \"SUPER-SECRET-TOKEN-...\"). Same dict-literal shape as the database_url entry above."
 
@@ -551,7 +551,7 @@ file     = "vulnerable/real_misses/hardcoded_dict_secrets.py"
 line     = 31
 rule     = "BAS-ZT1-002"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "A database URL with an inline password (postgresql://svc:hunter2@...) as a dict literal value. Same shape as the line-15 entry, in the second function."
 
@@ -1200,7 +1200,7 @@ file     = "vulnerable/zt1_static_credentials.ts"
 line     = 14
 rule     = "BAS-ZT1-003"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "OPENAI_API_KEY is a real-looking sk-proj-... key committed as an exported const literal instead of read from process.env or a secret manager."
 
@@ -1209,7 +1209,7 @@ file     = "vulnerable/zt1_static_credentials.ts"
 line     = 14
 rule     = "BAS-ZT1-011"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "The generic credential-shaped-literal rule reports the exported const statement (column 8), alongside BAS-ZT1-003's report of the string itself (column 31). Both describe the same committed key."
 
@@ -1308,7 +1308,7 @@ file     = "vulnerable/zt1_secret_shapes.py"
 line     = 21
 rule     = "BAS-ZT1-019"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "an AWS access key ID in the exact AKIA-prefixed shape is hardcoded."
 
@@ -1317,7 +1317,7 @@ file     = "vulnerable/zt1_secret_shapes.py"
 line     = 26
 rule     = "BAS-ZT1-020"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "high"
 why      = "the admin password's environment lookup has a real, source-visible default."
 
@@ -1342,7 +1342,7 @@ file     = "vulnerable/zt1_single_quoted_secrets.py"
 line     = 20
 rule     = "BAS-ZT1-019"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "a real-looking AWS access key ID in the exact AKIA-prefixed shape, single-quoted."
 
@@ -1365,7 +1365,7 @@ file     = "vulnerable/zt1_jwt_credential_shaped_key.py"
 line     = 26
 rule     = "BAS-ZT1-010"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "session_token is a realistic, credential-shaped variable name holding a high-entropy literal -- BAS-ZT1-010's generic credential-shaped-key signal, independent of the value's specific shape."
 
@@ -1693,7 +1693,7 @@ file     = "vulnerable/zt1_url_with_credentials.py"
 line     = 3
 rule     = "BAS-ZT1-010"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "a URL whose userinfo part is a credential is a hardcoded secret"
 
@@ -1702,7 +1702,7 @@ file     = "vulnerable/zt1_url_with_credentials.py"
 line     = 4
 rule     = "BAS-ZT1-010"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "a URL whose query string carries a credential is a hardcoded secret"
 
@@ -1719,7 +1719,7 @@ file     = "vulnerable/zt1_passphrase_password.ts"
 line     = 1
 rule     = "BAS-ZT1-011"
 category = "ZT1"
-kind     = "defect"
+kind     = "observation"
 severity = "critical"
 why      = "a passphrase-shaped literal assigned to a password is a hardcoded secret"
 
@@ -1879,3 +1879,12 @@ why      = "The mul tool's description ends in a zero-width space (U+200B), invi
 [[expect_none]]
 file = "clean/ordinary.bastyn-tools.json"
 why  = "A snapshot with an ordinary description, a ZWNJ and a left-to-right mark inside text, an emoji variation selector, and a null description -- none of them hidden-text or instruction phrasing."
+
+[[expect]]
+file     = "observations/key_in_test_file.test.ts"
+line     = 2
+rule     = "BAS-ZT1-003"
+category = "ZT1"
+kind     = "observation"
+severity = "critical"
+why      = "A sk- shaped literal in a .test.ts file is reported as an observation, the default policy for findings in test paths."

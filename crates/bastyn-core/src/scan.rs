@@ -727,6 +727,13 @@ mod tests {
         }
     }
 
+    fn offline_with_observations() -> ScanOptions {
+        ScanOptions {
+            include_observations: true,
+            ..offline()
+        }
+    }
+
     #[test]
     fn container_configuration_is_analysed_by_the_scan() {
         let dir = tree(&[
@@ -778,7 +785,7 @@ mod tests {
             "OPENAI_API_KEY=sk-proj-7f3a9c1eAbCdEfGh1234\nDB_PASSWORD=hunter2million\nDEBUG=true\n",
         )]);
 
-        let report = scan(dir.path(), &offline()).unwrap();
+        let report = scan(dir.path(), &offline_with_observations()).unwrap();
 
         assert_eq!(rule_ids(&report), ["BAS-ZT1-021", "BAS-ZT1-022"]);
         assert_eq!(
@@ -930,7 +937,7 @@ mod tests {
             ("web/bundle.js", &bundle),
         ]);
 
-        let report = scan(dir.path(), &offline()).unwrap();
+        let report = scan(dir.path(), &offline_with_observations()).unwrap();
 
         let mut found: Vec<String> = report
             .findings
@@ -1332,7 +1339,7 @@ mod tests {
             ("frontend/public/widget.js", handwritten.as_str()),
         ]);
 
-        let report = scan(dir.path(), &offline()).unwrap();
+        let report = scan(dir.path(), &offline_with_observations()).unwrap();
 
         let mut found: Vec<String> = report
             .findings
