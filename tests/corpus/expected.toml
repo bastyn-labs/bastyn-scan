@@ -1936,7 +1936,7 @@ file     = "vulnerable/llm10_eval_yaml_traced_input.py"
 line     = 17
 rule     = "BAS-LLM10-011"
 category = "LLM10"
-kind     = "defect"
+kind     = "observation"
 severity = "high"
 why      = "yaml.load(text.strip()) with the default loader -- the parsed text is derived from a function parameter through a call."
 
@@ -1945,7 +1945,7 @@ file     = "vulnerable/llm10_eval_yaml_traced_input.py"
 line     = 21
 rule     = "BAS-LLM10-011"
 category = "LLM10"
-kind     = "defect"
+kind     = "observation"
 severity = "high"
 why      = "yaml.load(text, Loader=yaml.UnsafeLoader) on a function parameter."
 
