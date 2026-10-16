@@ -837,7 +837,7 @@ mod tests {
             (".env.example", &format!("REGISTRY_AUTH={token}\n")),
         ]);
 
-        let report = scan(dir.path(), &offline()).unwrap();
+        let report = scan(dir.path(), &offline_with_observations()).unwrap();
 
         let found: Vec<(String, String)> = report
             .findings
