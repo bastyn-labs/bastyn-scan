@@ -1240,7 +1240,6 @@ fn live_matches(
         }
     }
     matches.sort_unstable_by_key(|&(offset, _, _)| offset);
-    matches.sort_unstable_by_key(|&(offset, _, _)| offset);
     matches
 }
 
