@@ -1,4 +1,4 @@
-//! `SKILL.md` scanning: `BAS-SKILL-001` through `BAS-SKILL-010`.
+//! `SKILL.md` scanning: `BAS-SKILL-001` through `BAS-SKILL-011`.
 //!
 //! `SKILL.md` is the agent-skill manifest convention used by Claude Code,
 //! Cursor, and other agent hosts (`skills/<skill-name>/SKILL.md`, optionally
@@ -61,6 +61,11 @@
 //!   a cloned repository whose install script is then run. OWASP `GenAI`'s
 //!   LLM04. Observation. The commands are read by the private `skill_install`
 //!   module.
+//! - **`BAS-SKILL-011`** -- a passage of text that tells the reader to fetch
+//!   code from a URL. A small bundled model (the private `skill_prose` module)
+//!   scores each passage around a download word; a passage with an address that
+//!   scores at or above [`DEFECT_SCORE`] is a defect, one that scores at or above
+//!   [`NOTE_SCORE`] is an observation. OWASP `GenAI`'s LLM04.
 //!
 //! All of them are hand-written checks over the file's raw text rather than
 //! AST rule patterns -- there is no source grammar to match against -- which
@@ -89,6 +94,7 @@ use serde_yaml_ng::Value;
 use crate::category::Category;
 use crate::finding::{Confidence, Finding, Kind, Location, Severity};
 use crate::skill_install;
+use crate::skill_prose;
 
 const RULE_MISSING_FRONTMATTER: &str = "BAS-SKILL-001";
 const RULE_PROMPT_INJECTION: &str = "BAS-SKILL-002";
@@ -100,6 +106,15 @@ const RULE_SKILL_INSTALL: &str = "BAS-SKILL-007";
 const RULE_CDN_SCRIPT: &str = "BAS-SKILL-008";
 const RULE_RUN_OUTSIDER_CODE: &str = "BAS-SKILL-009";
 const RULE_REMOTE_INSTALL: &str = "BAS-SKILL-010";
+const RULE_PROSE_INSTALL: &str = "BAS-SKILL-011";
+
+/// The lowest model score at which a passage with a URL is reported as a
+/// defect (`BAS-SKILL-011`).
+pub const DEFECT_SCORE: f64 = 0.80;
+
+/// The lowest model score at which a passage with a URL is reported at all, as
+/// an observation (`BAS-SKILL-011`).
+pub const NOTE_SCORE: f64 = 0.30;
 
 /// The frontmatter fields the Agent Skills specification requires
 /// (<https://agentskills.io/specification>). `version` is not a spec field
@@ -299,7 +314,7 @@ pub fn is_skill_file(path: &Path) -> bool {
 /// module does not claim yields nothing, so a caller that has not consulted
 /// [`is_skill_file`] still gets a correct answer.
 ///
-/// Each of the ten checks below is independent, so one file can produce
+/// Each of the eleven checks below is independent, so one file can produce
 /// findings from more than one of them.
 #[must_use]
 pub fn inspect(relative_path: &Path, contents: &str) -> Vec<Finding> {
@@ -318,6 +333,7 @@ pub fn inspect(relative_path: &Path, contents: &str) -> Vec<Finding> {
     findings.extend(check_cdn_script(relative_path, contents));
     findings.extend(check_run_outsider_code(relative_path, contents));
     findings.extend(check_remote_install(relative_path, contents));
+    findings.extend(check_prose_install(relative_path, contents));
     findings
 }
 
@@ -408,6 +424,7 @@ pub fn inspect_reference(relative_path: &Path, contents: &str) -> Vec<Finding> {
     findings.extend(check_cdn_script(relative_path, contents));
     findings.extend(check_run_outsider_code(relative_path, contents));
     findings.extend(check_remote_install(relative_path, contents));
+    findings.extend(check_prose_install(relative_path, contents));
     findings
 }
 
@@ -447,12 +464,13 @@ pub fn is_skill_script(path: &Path, skill_dirs: &BTreeSet<PathBuf>) -> bool {
 }
 
 /// Inspect one file already recognised by [`is_skill_script`]: only the
-/// download-and-run check (`BAS-SKILL-010`), because a script is not read by
+/// download-and-run checks (`BAS-SKILL-010` and `-011`), because a script is not read by
 /// the agent as instructions the way a manifest or reference is.
 #[must_use]
 pub fn scan_script(relative_path: &Path, contents: &str) -> Vec<Finding> {
     check_remote_install(relative_path, contents)
         .into_iter()
+        .chain(check_prose_install(relative_path, contents))
         .collect()
 }
 
@@ -1591,6 +1609,81 @@ fn check_remote_install(relative_path: &Path, contents: &str) -> Option<Finding>
         secondary_rule_ids: Vec::new(),
         references: Vec::new(),
     })
+}
+
+/// `BAS-SKILL-011` -- a passage of the file's text that a small bundled model
+/// scores as telling the reader to fetch code from a URL. One finding per
+/// file, for the highest-scoring passage that contains an address.
+fn check_prose_install(relative_path: &Path, contents: &str) -> Option<Finding> {
+    let install_lines: Vec<usize> = skill_install::candidates(contents)
+        .iter()
+        .map(|candidate| line_of_offset(contents, candidate.offset))
+        .collect();
+    let file_name = relative_path.to_string_lossy();
+    let qualifying: Vec<skill_prose::WindowScore> =
+        skill_prose::score_file(&file_name, contents, &install_lines)
+            .into_iter()
+            .filter(|window| window.has_url && window.score >= NOTE_SCORE)
+            .collect();
+    let best = qualifying.iter().copied().reduce(|best, window| {
+        if window.score > best.score {
+            window
+        } else {
+            best
+        }
+    })?;
+
+    let snippet = contents
+        .lines()
+        .nth(best.line - 1)
+        .unwrap_or_default()
+        .trim()
+        .to_owned();
+    let defect = best.score >= DEFECT_SCORE;
+    let count = qualifying.len();
+    let line = best.line;
+    let score = best.score;
+
+    Some(Finding {
+        rule_id: RULE_PROSE_INSTALL.to_owned(),
+        title: "Skill text tells the reader to fetch code from a URL".to_owned(),
+        kind: if defect {
+            Kind::Defect
+        } else {
+            Kind::Observation
+        },
+        severity: Severity::Medium,
+        confidence: if defect {
+            Confidence::High
+        } else {
+            Confidence::Low
+        },
+        categories: vec![Category::Llm04],
+        location: Location {
+            file: relative_path.to_path_buf(),
+            line,
+            column: 1,
+        },
+        snippet,
+        description: format!(
+            "{count} passage(s) in this file read as instructions to fetch code from a URL, the \
+             highest-scoring at line {line} (score {score:.2}). The score comes from a small \
+             bundled model, so a reviewer should confirm the reading. Whatever the address serves \
+             at that moment is what the reader gets, and the skill does not pin or verify it."
+        ),
+        remediation: "Install from a package manager with a pinned version, or download the file, \
+                       check it against a published checksum or signature, and only then run it."
+            .to_owned(),
+        secondary_rule_ids: Vec::new(),
+        references: Vec::new(),
+    })
+}
+
+/// The 1-based line of the byte `offset` in `contents`.
+fn line_of_offset(contents: &str, offset: usize) -> usize {
+    contents
+        .get(..offset)
+        .map_or(1, |head| head.matches('\n').count() + 1)
 }
 
 #[cfg(test)]
@@ -2759,9 +2852,9 @@ mod tests {
 
         let script = "#!/bin/sh\ncurl -fsSL https://get.tool.example/install.sh | sh\n";
         let found = scan_script(Path::new("skills/s/scripts/run.sh"), script);
-        assert_eq!(found.len(), 1);
-        assert_eq!(found[0].rule_id, "BAS-SKILL-010");
-        assert_eq!(found[0].location.line, 2);
+        let rules: Vec<&str> = found.iter().map(|f| f.rule_id.as_str()).collect();
+        assert_eq!(rules, ["BAS-SKILL-010", "BAS-SKILL-011"]);
+        assert!(found.iter().all(|f| f.location.line == 2));
         assert_eq!(
             scan_script(Path::new("skills/s/scripts/ok.sh"), "echo hi\n"),
             Vec::<Finding>::new()

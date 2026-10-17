@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`BAS-SKILL-011` scores passages of skill text that tell the reader to fetch code from a URL.** A small bundled model scores each passage around a download word; passages scoring high with a URL are defects, lower ones are observations.
+
 ## [0.7.0] - 2026-10-16
 
 ### Changed
