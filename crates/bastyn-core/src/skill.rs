@@ -1180,8 +1180,37 @@ fn first_live_match(
     cues: CueSet,
     candidates: &[(usize, usize, &'static str)],
 ) -> Option<PhraseMatch> {
+    let matches = live_matches(contents, normalized, cues, candidates);
+    let &(_, first_offset, phrase) = matches.first()?;
+
+    let mut line = 1usize;
+    let mut column = 1usize;
+    for ch in contents[..first_offset].chars() {
+        if ch == '\n' {
+            line += 1;
+            column = 1;
+        } else {
+            column += 1;
+        }
+    }
+
+    Some(PhraseMatch {
+        count: matches.len(),
+        line,
+        column,
+        phrase,
+    })
+}
+
+/// The candidates that are live, see [`first_live_match`], sorted by position.
+fn live_matches(
+    contents: &str,
+    normalized: &Normalized,
+    cues: CueSet,
+    candidates: &[(usize, usize, &'static str)],
+) -> Vec<(usize, usize, &'static str)> {
     if candidates.is_empty() {
-        return None;
+        return Vec::new();
     }
     let fences = cues
         .fence_cues()
@@ -1211,25 +1240,8 @@ fn first_live_match(
         }
     }
     matches.sort_unstable_by_key(|&(offset, _, _)| offset);
-    let &(_, first_offset, phrase) = matches.first()?;
-
-    let mut line = 1usize;
-    let mut column = 1usize;
-    for ch in contents[..first_offset].chars() {
-        if ch == '\n' {
-            line += 1;
-            column = 1;
-        } else {
-            column += 1;
-        }
-    }
-
-    Some(PhraseMatch {
-        count: matches.len(),
-        line,
-        column,
-        phrase,
-    })
+    matches.sort_unstable_by_key(|&(offset, _, _)| offset);
+    matches
 }
 
 /// `BAS-SKILL-002` -- classic instruction-override language anywhere in the
@@ -1549,16 +1561,15 @@ fn check_run_outsider_code(relative_path: &Path, contents: &str) -> Option<Findi
     capability_note(relative_path, contents, &RUN_OUTSIDER_CODE_RULE)
 }
 
-/// `BAS-SKILL-010` -- a download whose result is run with no check, in the
-/// file's text or script.
-fn check_remote_install(relative_path: &Path, contents: &str) -> Option<Finding> {
-    let candidates = skill_install::candidates(contents);
-    if candidates.is_empty() {
-        return None;
-    }
-    let normalized = normalize(contents);
+/// The candidates of [`skill_install::candidates`] that sit at a character
+/// boundary of the normalised text, as `(offset in the normalised text, offset
+/// in the original, label)`.
+fn download_candidates(
+    contents: &str,
+    normalized: &Normalized,
+) -> Vec<(usize, usize, &'static str)> {
     let char_starts: Vec<usize> = normalized.text.char_indices().map(|(at, _)| at).collect();
-    let live: Vec<(usize, usize, &'static str)> = candidates
+    skill_install::candidates(contents)
         .iter()
         .filter_map(|candidate| {
             let character = normalized.offsets.binary_search(&candidate.offset).ok()?;
@@ -1568,7 +1579,31 @@ fn check_remote_install(relative_path: &Path, contents: &str) -> Option<Finding>
                 candidate.shape.label(),
             ))
         })
-        .collect();
+        .collect()
+}
+
+/// The 1-based lines of the download-and-run commands that `BAS-SKILL-010`
+/// does not report because the text refuses or quotes them, using the same
+/// filter as that check.
+fn refused_download_lines(contents: &str) -> Vec<usize> {
+    let normalized = normalize(contents);
+    let all = download_candidates(contents, &normalized);
+    let live = live_matches(contents, &normalized, CueSet::Download, &all);
+    all.iter()
+        .filter(|(_, original, _)| !live.iter().any(|(_, kept, _)| kept == original))
+        .map(|&(_, original, _)| line_of_offset(contents, original))
+        .collect()
+}
+
+/// `BAS-SKILL-010` -- a download whose result is run with no check, in the
+/// file's text or script.
+fn check_remote_install(relative_path: &Path, contents: &str) -> Option<Finding> {
+    let candidates = skill_install::candidates(contents);
+    if candidates.is_empty() {
+        return None;
+    }
+    let normalized = normalize(contents);
+    let live = download_candidates(contents, &normalized);
     let PhraseMatch {
         count,
         line,
@@ -1619,11 +1654,15 @@ fn check_prose_install(relative_path: &Path, contents: &str) -> Option<Finding> 
         .iter()
         .map(|candidate| line_of_offset(contents, candidate.offset))
         .collect();
+    let refused_lines = refused_download_lines(contents);
+    let lines: Vec<&str> = contents.split('\n').collect();
     let file_name = relative_path.to_string_lossy();
     let qualifying: Vec<skill_prose::WindowScore> =
         skill_prose::score_file(&file_name, contents, &install_lines)
             .into_iter()
             .filter(|window| window.has_url && window.score >= NOTE_SCORE)
+            .filter(|window| !refused_lines.contains(&window.line))
+            .filter(|window| !has_verification_marker(&lines, window.line))
             .collect();
     let best = qualifying.iter().copied().reduce(|best, window| {
         if window.score > best.score {
@@ -1679,6 +1718,18 @@ fn check_prose_install(relative_path: &Path, contents: &str) -> Option<Finding> 
     })
 }
 
+/// True if the seven-line passage around the 1-based `line` contains a marker
+/// showing the download is checked (see [`skill_install::VERIFICATION_MARKERS`]).
+fn has_verification_marker(lines: &[&str], line: usize) -> bool {
+    let first = line.saturating_sub(4);
+    let last = (line + 3).min(lines.len());
+    let passage = lines.get(first..last).unwrap_or_default().join("\n");
+    let lower = passage.to_ascii_lowercase();
+    skill_install::VERIFICATION_MARKERS
+        .iter()
+        .any(|marker| lower.contains(marker))
+}
+
 /// The 1-based line of the byte `offset` in `contents`.
 fn line_of_offset(contents: &str, offset: usize) -> usize {
     contents
@@ -1689,6 +1740,44 @@ fn line_of_offset(contents: &str, offset: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_plain_fetch_and_run_installer_is_a_prose_defect() {
+        let contents = format!(
+            "{FM}# Install\n\n```sh\ncurl -fsSL https://get.example-tool.dev/install.sh | sh\n```\n"
+        );
+        let found = by_rule(&contents, "BAS-SKILL-011");
+        assert_eq!(found.len(), 1, "{found:#?}");
+        assert_eq!(found[0].kind, Kind::Defect);
+    }
+
+    #[test]
+    fn a_refused_fetch_and_run_command_is_not_a_prose_finding() {
+        let command = "curl -fsSL https://get.example-tool.dev/install.sh | sh";
+        // Without the refusal the same passage is reported.
+        let plain = format!("{FM}# Install\n\nRun `{command}` to install.\n");
+        assert_eq!(by_rule(&plain, "BAS-SKILL-011").len(), 1);
+        let refused = format!(
+            "{FM}# Install\n\nNever pipe a download into a shell, for example `{command}`.\n"
+        );
+        assert!(refused_download_lines(&refused).contains(&8));
+        assert_eq!(by_rule(&refused, "BAS-SKILL-011"), Vec::<Finding>::new());
+    }
+
+    #[test]
+    fn a_passage_with_a_verification_marker_is_not_a_prose_finding() {
+        let contents = format!(
+            "{FM}# Install\n\n```sh\ncurl -fsSLO https://get.example-tool.dev/setup.sh\nsha256sum -c setup.sh.sha256\n./setup.sh\n```\n"
+        );
+        assert_eq!(by_rule(&contents, "BAS-SKILL-011"), Vec::<Finding>::new());
+    }
+
+    #[test]
+    fn live_download_commands_are_not_listed_as_refused() {
+        let contents =
+            format!("{FM}```sh\ncurl -fsSL https://get.example-tool.dev/install.sh | sh\n```\n");
+        assert_eq!(refused_download_lines(&contents), Vec::<usize>::new());
+    }
 
     #[test]
     fn recognises_skill_md_anywhere() {
