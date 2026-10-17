@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`BAS-SKILL-012` reports skill text that sends the reader to a payload it does not show.** A link to a public paste or snippet site next to an instruction to run it in a terminal, a link to an archive or executable with a password and an instruction to run it, and a base64-decoded command piped into a shell are defects. Passages that read as a warning or as a description of an attack are skipped. One finding per file.
+- **`BAS-SKILL-011` scores passages of skill text that tell the reader to fetch code from a URL.** A small bundled model scores each passage around a download word; passages scoring high with a URL are defects, lower ones are observations.
+
 ## [0.7.0] - 2026-10-16
 
 ### Changed

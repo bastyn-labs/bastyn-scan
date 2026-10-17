@@ -31,6 +31,8 @@ pub(crate) mod flow;
 mod generated;
 mod provider_token;
 mod skill_install;
+mod skill_lure;
+mod skill_prose;
 mod test_path;
 mod walk;
 

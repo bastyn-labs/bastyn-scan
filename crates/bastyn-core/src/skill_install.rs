@@ -59,7 +59,7 @@ pub(crate) struct Candidate {
 
 /// Text that, on a command line or between a download and its run, shows the
 /// download is checked first. Lowercase substrings.
-const VERIFICATION_MARKERS: &[&str] = &[
+pub(crate) const VERIFICATION_MARKERS: &[&str] = &[
     "sha256sum",
     "sha512sum",
     "sha1sum",

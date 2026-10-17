@@ -2011,9 +2011,43 @@ kind     = "observation"
 severity = "medium"
 why      = "The install step pipes a download from a URL straight into a shell, so whatever the address serves at that moment runs unchecked."
 
+[[expect]]
+file     = "observations/skills/remote-installer/SKILL.md"
+line     = 11
+rule     = "BAS-SKILL-011"
+category = "LLM04"
+kind     = "defect"
+severity = "medium"
+why      = "The install step is a fenced command that fetches an installer from a URL and runs it; the passage scores above the defect threshold."
+
 [[expect_none]]
 file = "clean/skills/checked-installer/SKILL.md"
 why  = "Installs with a package manager, or downloads the installer and checks it against a checksum before running it, and states that a download is never piped into a shell; none of the three is an unchecked download-and-run."
+
+# skills/ -- text that tells the reader to fetch code from a URL
+# (BAS-SKILL-011, scored by the bundled model)
+
+[[expect]]
+file     = "vulnerable/skills/prose-installer/SKILL.md"
+line     = 11
+rule     = "BAS-SKILL-011"
+category = "LLM04"
+kind     = "defect"
+severity = "medium"
+why      = "An Install section tells the reader to run an installer fetched from a URL in a fenced command; the passage scores above the defect threshold."
+
+[[expect]]
+file     = "vulnerable/skills/prose-installer/SKILL.md"
+line     = 11
+rule     = "BAS-SKILL-010"
+category = "LLM04"
+kind     = "observation"
+severity = "medium"
+why      = "The same fenced command pipes a download from a URL straight into a shell."
+
+[[expect_none]]
+file = "clean/skills/prose-warning/SKILL.md"
+why  = "Mentions downloading and a URL only to warn against piping a download into a shell and to say a hand-downloaded release should be checked against a published checksum; the passages score below the reporting threshold."
 
 # BAS-LLM10-012: a joined path is reported only when a non-literal segment
 # can be supplied from outside. clean/path_open_no_caller_input.py proves
@@ -2102,3 +2136,19 @@ category = "LLM10"
 kind     = "defect"
 severity = "critical"
 why      = "The command mixes the fixed interpreter path with a caller-supplied package name, so it is not a closed value."
+
+# skills/ -- text that sends the reader to a payload it does not show
+# (BAS-SKILL-012)
+
+[[expect]]
+file     = "vulnerable/skills/hidden-payload/SKILL.md"
+line     = 10
+rule     = "BAS-SKILL-012"
+category = "LLM04"
+kind     = "defect"
+severity = "high"
+why      = "The Windows step links to an archive, gives its password and says to run it; the macOS step links to a public snippet and says to paste it into a terminal. Neither shows what runs."
+
+[[expect_none]]
+file = "clean/skills/payload-warning/SKILL.md"
+why  = "Mentions a snippet site, a password-protected archive and a decoded command piped into a shell only to warn against them."
