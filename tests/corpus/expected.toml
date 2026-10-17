@@ -2015,6 +2015,31 @@ why      = "The install step pipes a download from a URL straight into a shell, 
 file = "clean/skills/checked-installer/SKILL.md"
 why  = "Installs with a package manager, or downloads the installer and checks it against a checksum before running it, and states that a download is never piped into a shell; none of the three is an unchecked download-and-run."
 
+# skills/ -- text that tells the reader to fetch code from a URL
+# (BAS-SKILL-011, scored by the bundled model)
+
+[[expect]]
+file     = "vulnerable/skills/prose-installer/SKILL.md"
+line     = 11
+rule     = "BAS-SKILL-011"
+category = "LLM04"
+kind     = "defect"
+severity = "medium"
+why      = "An Install section tells the reader to run an installer fetched from a URL in a fenced command; the passage scores above the defect threshold."
+
+[[expect]]
+file     = "vulnerable/skills/prose-installer/SKILL.md"
+line     = 11
+rule     = "BAS-SKILL-010"
+category = "LLM04"
+kind     = "observation"
+severity = "medium"
+why      = "The same fenced command pipes a download from a URL straight into a shell."
+
+[[expect_none]]
+file = "clean/skills/prose-warning/SKILL.md"
+why  = "Mentions downloading and a URL only to warn against piping a download into a shell and to say a hand-downloaded release should be checked against a published checksum; the passages score below the reporting threshold."
+
 # BAS-LLM10-012: a joined path is reported only when a non-literal segment
 # can be supplied from outside. clean/path_open_no_caller_input.py proves
 # exclude_if: no_caller_input; observations/path_open_helper_parameter.py
