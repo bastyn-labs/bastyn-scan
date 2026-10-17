@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-17
+
 ### Added
 
 - **`BAS-SKILL-012` reports skill text that sends the reader to a payload it does not show.** A link to a public paste or snippet site next to an instruction to run it in a terminal, a link to an archive or executable with a password and an instruction to run it, and a base64-decoded command piped into a shell are defects. Passages that read as a warning or as a description of an attack are skipped. One finding per file.
@@ -686,7 +688,8 @@ single point in time. This paragraph prints no number, because it drifts every t
 added. See [Measured coverage](README.md#measured-coverage) for the current count, always derived
 from the gate rather than typed in here.
 
-[Unreleased]: https://github.com/BASTYN-labs/bastyn-scan/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/BASTYN-labs/bastyn-scan/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/BASTYN-labs/bastyn-scan/releases/tag/v0.8.0
 [0.7.0]: https://github.com/BASTYN-labs/bastyn-scan/releases/tag/v0.7.0
 [0.6.0]: https://github.com/BASTYN-labs/bastyn-scan/releases/tag/v0.6.0
 [0.5.0]: https://github.com/BASTYN-labs/bastyn-scan/releases/tag/v0.5.0
