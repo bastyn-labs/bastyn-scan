@@ -215,12 +215,28 @@ jobs:
           bash scripts/render-homebrew-formula.sh v9.9.9 scripts/testdata/homebrew/checksums /tmp/rendered.rb
           diff /tmp/rendered.rb scripts/testdata/homebrew/expected.rb
 
+  skills:
+    name: validate agent skills
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate every skill against the Agent Skills specification
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/skills-venv"
+          # Pinned: the validator is a reference implementation, so an
+          # unpinned install could change what passes without a change here.
+          "$RUNNER_TEMP/skills-venv/bin/pip" install --quiet skills-ref==0.1.1
+          for skill in .agents/skills/*/; do
+            "$RUNNER_TEMP/skills-venv/bin/agentskills" validate "$skill"
+          done
+
   # Single required status check for branch protection: stays green only if
   # every job above succeeded, including every leg of the matrix.
   ci:
     name: ci
     if: always()
-    needs: [fmt, clippy, test, msrv, docs, supply-chain, action-metadata, test-install-script, test-distribution-scripts]
+    needs: [fmt, clippy, test, msrv, docs, supply-chain, action-metadata, test-install-script, test-distribution-scripts, skills]
     runs-on: ubuntu-latest
     steps:
       - name: Verify every job succeeded
