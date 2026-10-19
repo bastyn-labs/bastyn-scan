@@ -260,7 +260,7 @@ jobs:
           ref: ${{ inputs.tag || github.ref }}
       - name: Install Homebrew
         if: runner.os == 'Linux'
-        uses: Homebrew/actions/setup-homebrew@2026.10.12.1
+        uses: Homebrew/actions/setup-homebrew@2026.10.19.1
       - name: Download release checksum files
         env:
           GH_TOKEN: ${{ github.token }}
@@ -315,7 +315,7 @@ jobs:
           name: bastyn-formula
       - name: Mint a homebrew-tap installation token
         id: app-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           app-id: ${{ secrets.HOMEBREW_TAP_APP_ID }}
           private-key: ${{ secrets.HOMEBREW_TAP_APP_PRIVATE_KEY }}
