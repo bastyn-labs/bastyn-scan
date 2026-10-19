@@ -52,4 +52,6 @@ cargo build --release --locked && target/release/bastyn scan tests/fixtures/vuln
 - Never skip, disable or loosen a failing test or gate to get a change through. Fix the cause.
 - Commit messages are imperative ("add SARIF writer"). User-visible changes get an entry under `[Unreleased]` in `CHANGELOG.md`. Keep unrelated changes in separate pull requests, and rebase rather than merge.
 - Write commit messages, pull request text and code comments in neutral terms: say what the code does, using the code and the public fixtures. Do not refer to other projects, tools, private repositories, audits or who found a problem.
-- Releases are cut by maintainers only, by pushing a `vX.Y.Z` tag. The version in `Cargo.toml`, `Cargo.lock`, the `action.yml` default and the changelog heading must agree. See "Releasing" in `CONTRIBUTING.md`; never tag or publish as part of a task.
+- Releases are maintainer-only; never tag or publish as part of a task. See "Releasing" in `CONTRIBUTING.md`.
+- To verify a published release, use the `verify-release` skill.
+- Task-specific workflows live in `.agents/skills/`.
