@@ -157,7 +157,12 @@ fn render_steps(out: &mut String, report: &Report, options: StdoutOptions) {
     let unpinned = report
         .skipped
         .iter()
-        .filter(|skip| skip.reason == SkipReason::Unpinned)
+        .filter(|skip| {
+            matches!(
+                skip.reason,
+                SkipReason::Unpinned | SkipReason::UnresolvedSource
+            )
+        })
         .count();
     let parsed = options.dependencies + unpinned;
     if parsed == 0 {
@@ -1631,10 +1636,10 @@ mod tests {
             text.contains("Analysed 17 files with 43 rules"),
             "the file count is the report's and the rule count the caller's:\n{text}"
         );
-        // Fourteen resolved plus the one unpinned entry in the fixture: an
-        // unpinned dependency was parsed just as successfully as a pinned one,
+        // Fourteen resolved plus the unpinned and the unresolved-source entries
+        // in the fixture: a dependency that cannot be looked up was parsed just as successfully as a pinned one,
         // it simply cannot be looked up.
-        assert!(text.contains("Parsed 15 dependencies"), "{text}");
+        assert!(text.contains("Parsed 16 dependencies"), "{text}");
     }
 
     // -----------------------------------------------------------------
@@ -1990,7 +1995,8 @@ mod tests {
 
         // Stated once for the group, not once per entry.
         assert_eq!(
-            section.matches("could not be matched to CVEs").count(),
+            section.matches("have unpinned versions").count()
+                + section.matches("has an unpinned version").count(),
             1,
             "the reason belongs to the group, not to each line:\n{section}"
         );

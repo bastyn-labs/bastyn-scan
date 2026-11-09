@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **Lockfiles are now the source of resolved dependency versions.** `uv.lock`, `poetry.lock`, `package-lock.json`, `pnpm-lock.yaml` and `yarn.lock` are read, and their packages, transitive ones included, are the versions looked up in OSV.dev. A lockfile at a workspace root applies to the member projects it lists. A project with no applicable lockfile is handled from its manifest as before, and a manifest dependency the lockfile does not list keeps the manifest handling. A manifest range that a lockfile resolves is no longer listed as `unpinned`.
+
+### Added
+
+- **Two new `coverage.skipped` reasons, `unsupported` and `unresolved_source`.** `unsupported` marks a lockfile in a format or version that is not read; `unresolved_source` marks a lockfile package that comes from a git checkout, a URL or a local path, so no advisory could be matched, and is reported at `lockfile:line`. A lockfile that does not parse is listed as `unparseable`. None of these counts as coverage, and the manifest is handled as if the lockfile were absent. The terminal checklist counts the new reasons with the other dependency gaps.
+
 ## [0.8.0] - 2026-10-17
 
 ### Added

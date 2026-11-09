@@ -260,6 +260,12 @@ pub(crate) fn every_skip_reason() -> Vec<Skip> {
             "opentelemetry-api".to_owned(),
             "*",
         ),
+        Skip::unsupported_lockfile("poetry.lock".to_owned(), "lock-version 3.0"),
+        Skip::unresolved_source(
+            "poetry.lock:40".to_owned(),
+            "internal-lib".to_owned(),
+            "git",
+        ),
     ]
 }
 
@@ -400,11 +406,13 @@ pub(crate) fn observations_withheld() -> Report {
 /// [`SkipReason::Unstated`] is deliberately absent: no scan produces it, and a
 /// test that expected it in rendered output would be pinning a case that
 /// cannot arise.
-pub(crate) const EVERY_REASON: [SkipReason; 6] = [
+pub(crate) const EVERY_REASON: [SkipReason; 8] = [
     SkipReason::Excluded,
     SkipReason::IgnoreFile,
     SkipReason::Generated,
     SkipReason::Unreadable,
     SkipReason::Unparseable,
     SkipReason::Unpinned,
+    SkipReason::Unsupported,
+    SkipReason::UnresolvedSource,
 ];

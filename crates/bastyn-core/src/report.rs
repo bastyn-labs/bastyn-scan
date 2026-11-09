@@ -63,6 +63,12 @@ pub enum SkipReason {
     Unparseable,
     /// A dependency is pinned to a range, so no advisory could be matched.
     Unpinned,
+    /// A lockfile was read but its format or version is not supported, so
+    /// its packages were not read.
+    Unsupported,
+    /// A dependency resolves to a git checkout, URL or local path, so no
+    /// advisory could be matched.
+    UnresolvedSource,
     /// Read back out of a serialised report, which carries the line but not
     /// the reason.
     ///
@@ -112,6 +118,18 @@ impl SkipReason {
             ),
             Self::Unpinned => {
                 "1 dependency has an unpinned version and could not be matched to CVEs:".into()
+            }
+            Self::Unsupported if plural => format!(
+                "{count} lockfiles are in a format or version that is not supported, so their packages were not read:"
+            ),
+            Self::Unsupported => {
+                "1 lockfile is in a format or version that is not supported, so its packages were not read:".into()
+            }
+            Self::UnresolvedSource if plural => format!(
+                "{count} dependencies resolve to a git, URL or local path source and could not be matched to CVEs:"
+            ),
+            Self::UnresolvedSource => {
+                "1 dependency resolves to a git, URL or local path source and could not be matched to CVEs:".into()
             }
             Self::Unstated if plural => {
                 format!("{count} paths were not covered, for reasons this report did not record:")
@@ -321,6 +339,36 @@ impl Skip {
         }
     }
 
+    /// A lockfile that was read but whose format or version is not supported.
+    #[must_use]
+    pub fn unsupported_lockfile(path: String, reason: &str) -> Self {
+        let line = format!(
+            "{path} \u{2014} lockfile not supported ({reason}), so its packages were not read"
+        );
+        Self {
+            reason: SkipReason::Unsupported,
+            path,
+            detail: reason.to_string(),
+            line,
+        }
+    }
+
+    /// A dependency a lockfile resolves to a git checkout, URL or local path.
+    ///
+    /// `path` is `file:line`; `source` names the kind of source.
+    #[must_use]
+    pub fn unresolved_source(path: String, name: String, source: &str) -> Self {
+        let line = format!(
+            "{path} \u{2014} {name} resolves to a {source} source, so CVEs were not checked"
+        );
+        Self {
+            reason: SkipReason::UnresolvedSource,
+            path,
+            detail: name,
+            line,
+        }
+    }
+
     /// An entry read back out of a serialised report.
     #[must_use]
     fn unstated(line: String) -> Self {
@@ -524,6 +572,58 @@ mod remote_tests {
         assert_eq!(
             value,
             serde_json::json!({"file": "mcp.json", "server": "docs", "status": "needs_credentials"})
+        );
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod skip_tests {
+    use super::*;
+
+    #[test]
+    fn lockfile_skips_serialise_as_one_line_each() {
+        let unsupported = Skip::unsupported_lockfile("poetry.lock".into(), "lock-version 3.0");
+        let source = Skip::unresolved_source("poetry.lock:40".into(), "lib".into(), "git");
+        let lines = serde_json::to_value(vec![unsupported.clone(), source.clone()]).unwrap();
+        assert_eq!(
+            lines,
+            serde_json::json!([
+                "poetry.lock \u{2014} lockfile not supported (lock-version 3.0), so its packages were not read",
+                "poetry.lock:40 \u{2014} lib resolves to a git source, so CVEs were not checked",
+            ])
+        );
+        assert_eq!(unsupported.reason, SkipReason::Unsupported);
+        assert_eq!(unsupported.detail, "lock-version 3.0");
+        assert_eq!(source.reason, SkipReason::UnresolvedSource);
+        assert_eq!(source.detail, "lib");
+        assert_eq!(source.path, "poetry.lock:40");
+    }
+
+    #[test]
+    fn new_reasons_sort_between_unpinned_and_unstated() {
+        assert!(SkipReason::Unpinned < SkipReason::Unsupported);
+        assert!(SkipReason::Unsupported < SkipReason::UnresolvedSource);
+        assert!(SkipReason::UnresolvedSource < SkipReason::Unstated);
+    }
+
+    #[test]
+    fn new_reason_sentences_agree_in_number() {
+        assert_eq!(
+            SkipReason::Unsupported.sentence(1),
+            "1 lockfile is in a format or version that is not supported, so its packages were not read:"
+        );
+        assert_eq!(
+            SkipReason::Unsupported.sentence(2),
+            "2 lockfiles are in a format or version that is not supported, so their packages were not read:"
+        );
+        assert_eq!(
+            SkipReason::UnresolvedSource.sentence(1),
+            "1 dependency resolves to a git, URL or local path source and could not be matched to CVEs:"
+        );
+        assert_eq!(
+            SkipReason::UnresolvedSource.sentence(3),
+            "3 dependencies resolve to a git, URL or local path source and could not be matched to CVEs:"
         );
     }
 }

@@ -235,7 +235,11 @@ impl ScanSummary {
                 .or_default() += 1;
             incomplete_scan |= matches!(
                 skip.reason,
-                SkipReason::Unreadable | SkipReason::Unparseable | SkipReason::Unpinned
+                SkipReason::Unreadable
+                    | SkipReason::Unparseable
+                    | SkipReason::Unpinned
+                    | SkipReason::Unsupported
+                    | SkipReason::UnresolvedSource
             );
         }
         for count in skips_by_reason.values_mut() {
@@ -370,6 +374,8 @@ const fn skip_reason_key(reason: SkipReason) -> &'static str {
         SkipReason::Unreadable => "unreadable",
         SkipReason::Unparseable => "unparseable",
         SkipReason::Unpinned => "unpinned",
+        SkipReason::Unsupported => "unsupported",
+        SkipReason::UnresolvedSource => "unresolved_source",
         SkipReason::Unstated => "unstated",
     }
 }
@@ -670,6 +676,10 @@ mod tests {
             SkipReason::Unreadable => Skip::unreadable("a".into()),
             SkipReason::Unparseable => Skip::unparseable("a".into()),
             SkipReason::Unpinned => Skip::unpinned("a".into(), "n".into(), ">=1"),
+            SkipReason::Unsupported => Skip::unsupported_lockfile("a".into(), "version 9"),
+            SkipReason::UnresolvedSource => {
+                Skip::unresolved_source("a:1".into(), "n".into(), "git")
+            }
             SkipReason::Unstated => serde_json::from_str("\"a\"").unwrap(),
         };
         let cases = [
@@ -679,6 +689,8 @@ mod tests {
             (SkipReason::Unreadable, "unreadable", "partial"),
             (SkipReason::Unparseable, "unparseable", "partial"),
             (SkipReason::Unpinned, "unpinned", "partial"),
+            (SkipReason::Unsupported, "unsupported", "partial"),
+            (SkipReason::UnresolvedSource, "unresolved_source", "partial"),
             (SkipReason::Unstated, "unstated", "complete"),
         ];
         for (reason, key, status) in cases {

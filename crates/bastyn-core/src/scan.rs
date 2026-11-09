@@ -263,6 +263,7 @@ fn is_analysed(relative: &Path, skill_dirs: &BTreeSet<PathBuf>) -> bool {
         || mcp::is_mcp_config(relative)
         || mcp::is_tools_snapshot(relative)
         || cve::is_manifest(relative)
+        || cve::is_lockfile(relative)
         || infra::is_infra_file(relative)
         || instructions::is_instruction_file(relative)
         || skill::is_skill_file(relative)
@@ -286,6 +287,11 @@ struct Analysis {
     scanned: usize,
     /// The paths covered per agent-file kind, in file order.
     coverage: Coverage,
+    /// What each parsed manifest declared, in file order, held back until
+    /// every lockfile is known.
+    manifests: Vec<cve::ManifestInput>,
+    /// Every lockfile read, parsed or not, in file order.
+    lockfiles: Vec<Result<cve::Lockfile, cve::LockError>>,
 }
 
 /// The agent-file kinds one file was successfully read as.
@@ -315,6 +321,10 @@ struct FileAnalysis {
     findings: Vec<Finding>,
     dependencies: Vec<Dependency>,
     unresolved_dependencies: Vec<UnresolvedDependency>,
+    /// The manifest's declarations, when this file is a manifest that parsed.
+    manifest: Option<cve::ManifestInput>,
+    /// The parse result, when this file is a lockfile.
+    lockfile: Option<Result<cve::Lockfile, cve::LockError>>,
     skipped: Vec<Skip>,
     /// Which agent-file kinds this file was read as, for [`Report::coverage`].
     covered: Covered,
@@ -388,6 +398,8 @@ fn analyse(
         out.dependencies.extend(file.dependencies);
         out.unresolved_dependencies
             .extend(file.unresolved_dependencies);
+        out.manifests.extend(file.manifest);
+        out.lockfiles.extend(file.lockfile);
         out.skipped.extend(file.skipped);
         out.scanned += usize::from(file.scanned);
         if let Some(path) = file.covered_path {
@@ -407,6 +419,42 @@ fn analyse(
                 out.coverage.instruction_files.push(path);
             }
         }
+    }
+
+    reconcile_dependencies(out);
+}
+
+/// Combine the manifests and lockfiles gathered by [`analyse`] into the
+/// pending CVE query and the skip list.
+///
+/// A lockfile that applies to a manifest supplies the resolved versions,
+/// transitive packages included. A manifest with no applicable lockfile, or a
+/// name the lockfile does not know, keeps the manifest handling: an exact pin
+/// is queried, a range is listed as unpinned.
+fn reconcile_dependencies(out: &mut Analysis) {
+    let reconciled = cve::reconcile(&out.manifests, &out.lockfiles);
+    out.dependencies.extend(reconciled.dependencies);
+    for gap in &reconciled.gaps {
+        out.skipped.insert(Skip::unpinned(
+            format!("{}:{}", display_path(&gap.file), gap.line),
+            gap.name.clone(),
+            &gap.constraint,
+        ));
+    }
+    for source in &reconciled.unresolved_sources {
+        out.skipped.insert(Skip::unresolved_source(
+            format!("{}:{}", display_path(&source.file), source.line),
+            source.name.clone(),
+            &source.source,
+        ));
+    }
+    for error in &reconciled.lock_errors {
+        out.skipped.insert(match error {
+            cve::LockError::Malformed { file, .. } => Skip::unparseable(display_path(file)),
+            cve::LockError::Unsupported { file, reason } => {
+                Skip::unsupported_lockfile(display_path(file), reason)
+            }
+        });
     }
 }
 
@@ -462,6 +510,7 @@ fn analyse_file(
     let mcp_config = mcp::is_mcp_config(relative);
     let tools_snapshot = mcp::is_tools_snapshot(relative);
     let manifest = cve::is_manifest(relative);
+    let lockfile = cve::is_lockfile(relative);
     let infra_file = infra::is_infra_file(relative);
     let instruction_file = instructions::is_instruction_file(relative);
     let skill_file = skill::is_skill_file(relative);
@@ -469,7 +518,8 @@ fn analyse_file(
     let skill_script = skill::is_skill_script(relative, skill_dirs);
     let env_file = dotenv::is_env_file(relative);
     let claimed_by_analyser =
-        mcp_config || tools_snapshot || manifest || infra_file || instruction_file || skill_file;
+        mcp_config || tools_snapshot || infra_file || instruction_file || skill_file;
+    let claimed_by_analyser = claimed_by_analyser || manifest || lockfile;
     if source_language.is_none()
         && !claimed_by_analyser
         && !skill_reference
@@ -611,6 +661,10 @@ fn analyse_file(
         collect_dependencies(relative, &contents, &mut out);
     }
 
+    if lockfile {
+        out.lockfile = Some(parse_lockfile_at(root, relative, &contents));
+    }
+
     Some(out)
 }
 
@@ -639,22 +693,45 @@ fn add_provider_tokens(
         .extend(provider_token::inspect(relative, contents, &reported));
 }
 
-/// Parse one dependency manifest into the pending CVE query.
+/// Parse the lockfile at `relative`.
+///
+/// A classic `yarn.lock` does not record its workspace layout, so its sibling
+/// `package.json` is read for the workspace globs. Best effort: without it the
+/// lockfile is parsed on its own.
+fn parse_lockfile_at(
+    root: &Path,
+    relative: &Path,
+    contents: &str,
+) -> Result<cve::Lockfile, cve::LockError> {
+    let sibling = relative
+        .file_name()
+        .is_some_and(|name| name == "yarn.lock")
+        .then(|| {
+            let parent = relative.parent().unwrap_or_else(|| Path::new(""));
+            std::fs::read_to_string(root.join(parent).join("package.json")).ok()
+        })
+        .flatten();
+    cve::parse_lockfile(relative, contents, sibling.as_deref())
+}
+
+/// Parse one dependency manifest and record what it declares.
+///
+/// Nothing is queried or listed as unpinned here: whether a lockfile resolves
+/// a range is only known once every file has been read, so
+/// [`reconcile_dependencies`] decides that. The ranges are still kept in
+/// `unresolved_dependencies`, which `BAS-LLM04-001` reads directly.
 fn collect_dependencies(relative: &Path, contents: &str, out: &mut FileAnalysis) {
     match cve::parse_manifest(relative, contents) {
         Ok((resolved, unresolved)) => {
-            out.dependencies.extend(resolved);
-            // An unpinned range is not a finding and not an error. It is a gap
-            // in what we could check, and belongs with the other things the
-            // report admits it did not cover. Guessing a version and matching
-            // advisories against the guess produces confident nonsense.
-            for dep in unresolved {
-                out.skipped.push(Skip::unpinned(
-                    format!("{}:{}", display_path(&dep.file), dep.line),
-                    dep.name.clone(),
-                    &dep.constraint,
-                ));
-                out.unresolved_dependencies.push(dep);
+            out.unresolved_dependencies
+                .extend(unresolved.iter().cloned());
+            if let Some(ecosystem) = cve::manifest_ecosystem(relative) {
+                out.manifest = Some(cve::ManifestInput {
+                    file: relative.to_path_buf(),
+                    ecosystem,
+                    resolved,
+                    unresolved,
+                });
             }
         }
         Err(_) => {
@@ -1534,6 +1611,14 @@ def advise(question):
             "requests==2.19.1\nflask>=2.0\n",
         )
         .unwrap();
+        // A manifest range resolved by a lockfile, so the merge of the two is
+        // part of what the thread counts must agree on.
+        fs::write(
+            dir.path().join("pkg000").join("pyproject.toml"),
+            PYPROJECT_RANGE,
+        )
+        .unwrap();
+        fs::write(dir.path().join("pkg000").join("uv.lock"), UV_LOCK).unwrap();
         dir
     }
 
@@ -1833,5 +1918,191 @@ def advise(question):
             (findings[0].location.line, findings[0].location.column),
             (3, 5)
         );
+    }
+
+    const PYPROJECT_RANGE: &str =
+        "[project]\nname = \"app\"\nversion = \"0.1.0\"\ndependencies = [\"requests>=2.0\"]\n";
+
+    const UV_LOCK: &str = r#"version = 1
+
+[[package]]
+name = "requests"
+version = "2.31.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "urllib3" },
+]
+
+[[package]]
+name = "urllib3"
+version = "2.2.1"
+source = { registry = "https://pypi.org/simple" }
+"#;
+
+    /// Run the analysis pass alone, so the pending dependency list can be read.
+    fn gathered(root: &Path) -> Analysis {
+        let walked = collect_files(root, &WalkOptions::default()).unwrap();
+        let skill_dirs = skill::skill_dirs(&walked.files);
+        let ruleset = RuleSet::embedded().unwrap();
+        let mut analysis = Analysis::default();
+        analyse(
+            root,
+            &walked.files,
+            &skill_dirs,
+            &ruleset,
+            &Silent,
+            &mut analysis,
+        );
+        analysis
+    }
+
+    fn skips(report: &Report, reason: SkipReason) -> Vec<&str> {
+        report
+            .skipped
+            .iter()
+            .filter(|skip| skip.reason == reason)
+            .map(|skip| skip.path.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn a_lockfile_supplies_resolved_versions_including_transitive_ones() {
+        let dir = tree(&[("pyproject.toml", PYPROJECT_RANGE), ("uv.lock", UV_LOCK)]);
+
+        let analysis = gathered(dir.path());
+        let mut resolved: Vec<(&str, &str)> = analysis
+            .dependencies
+            .iter()
+            .map(|dep| (dep.name.as_str(), dep.version.as_str()))
+            .collect();
+        resolved.sort_unstable();
+        assert_eq!(resolved, [("requests", "2.31.0"), ("urllib3", "2.2.1")]);
+
+        let report = scan(dir.path(), &offline()).unwrap();
+        assert_eq!(skips(&report, SkipReason::Unpinned), Vec::<&str>::new());
+        assert_eq!(report.summary.files_scanned, 2);
+    }
+
+    #[test]
+    fn without_a_lockfile_a_manifest_range_is_unpinned() {
+        let dir = tree(&[("pyproject.toml", PYPROJECT_RANGE)]);
+
+        assert_eq!(gathered(dir.path()).dependencies.len(), 0);
+        let report = scan(dir.path(), &offline()).unwrap();
+        assert_eq!(skips(&report, SkipReason::Unpinned), ["pyproject.toml:4"]);
+    }
+
+    #[test]
+    fn a_malformed_lockfile_is_skipped_and_the_manifest_is_still_handled() {
+        let dir = tree(&[
+            (
+                "package.json",
+                "{\n  \"dependencies\": { \"lodash\": \"^4.0.0\" }\n}\n",
+            ),
+            ("package-lock.json", "{ not json"),
+        ]);
+
+        let report = scan(dir.path(), &offline()).unwrap();
+        assert_eq!(
+            skips(&report, SkipReason::Unparseable),
+            ["package-lock.json"]
+        );
+        assert_eq!(skips(&report, SkipReason::Unpinned).len(), 1);
+    }
+
+    #[test]
+    fn an_unsupported_lockfile_is_reported_and_does_not_count_as_coverage() {
+        let dir = tree(&[
+            (
+                "package.json",
+                "{\n  \"dependencies\": { \"lodash\": \"^4.0.0\" }\n}\n",
+            ),
+            (
+                "package-lock.json",
+                "{ \"lockfileVersion\": 9, \"packages\": {} }",
+            ),
+        ]);
+
+        let report = scan(dir.path(), &offline()).unwrap();
+        assert_eq!(
+            skips(&report, SkipReason::Unsupported),
+            ["package-lock.json"]
+        );
+        assert_eq!(skips(&report, SkipReason::Unpinned).len(), 1);
+    }
+
+    #[test]
+    fn a_git_sourced_lock_entry_is_an_unresolved_source_at_its_line() {
+        let lock = "{\n  \"lockfileVersion\": 3,\n  \"packages\": {\n    \"node_modules/from-git\": {\n      \"version\": \"1.0.0\",\n      \"resolved\": \"git+ssh://git@github.com/o/r.git#abc123\"\n    }\n  }\n}\n";
+        let dir = tree(&[("package.json", "{}\n"), ("package-lock.json", lock)]);
+
+        let report = scan(dir.path(), &offline()).unwrap();
+        let sources = skips(&report, SkipReason::UnresolvedSource);
+        assert_eq!(sources.len(), 1, "{:#?}", report.skipped);
+        assert!(sources[0].starts_with("package-lock.json:"), "{sources:?}");
+        assert_eq!(skips(&report, SkipReason::Unpinned), Vec::<&str>::new());
+    }
+
+    #[test]
+    fn a_workspace_root_lockfile_applies_to_its_members_only() {
+        let lock = r#"{
+  "lockfileVersion": 3,
+  "packages": {
+    "": { "workspaces": ["packages/*"] },
+    "packages/api": { "name": "api", "version": "1.0.0" },
+    "node_modules/lodash": {
+      "version": "4.17.21",
+      "resolved": "https://registry.npmjs.org/lodash/-/lodash-4.17.21.tgz"
+    }
+  }
+}
+"#;
+        let manifest = "{\n  \"dependencies\": { \"lodash\": \"^4.0.0\" }\n}\n";
+        let dir = tree(&[
+            ("package.json", "{\n  \"workspaces\": [\"packages/*\"]\n}\n"),
+            ("package-lock.json", lock),
+            ("packages/api/package.json", manifest),
+            ("other/package.json", manifest),
+        ]);
+
+        let report = scan(dir.path(), &offline()).unwrap();
+        assert_eq!(
+            skips(&report, SkipReason::Unpinned),
+            ["other/package.json:2"]
+        );
+        let analysis = gathered(dir.path());
+        assert!(
+            analysis
+                .dependencies
+                .iter()
+                .any(|dep| dep.name == "lodash" && dep.version == "4.17.21")
+        );
+    }
+
+    #[test]
+    fn no_source_extension_or_manifest_is_a_lockfile() {
+        for name in [
+            "uv.lock",
+            "poetry.lock",
+            "package-lock.json",
+            "pnpm-lock.yaml",
+            "yarn.lock",
+        ] {
+            let path = Path::new(name);
+            assert!(cve::is_lockfile(path), "{name} must be a lockfile");
+            assert!(
+                is_analysed(path, &BTreeSet::new()),
+                "{name} must be analysed"
+            );
+            assert!(!cve::is_manifest(path), "{name} is claimed as a manifest");
+            assert!(!mcp::is_mcp_config(path), "{name} is claimed as mcp");
+            assert!(!infra::is_infra_file(path), "{name} is claimed as infra");
+            assert!(
+                !instructions::is_instruction_file(path),
+                "{name} is claimed as instructions"
+            );
+            assert!(!skill::is_skill_file(path), "{name} is claimed as a skill");
+            assert!(SourceLanguage::from_path(path).is_none());
+        }
     }
 }
