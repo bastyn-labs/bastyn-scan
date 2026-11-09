@@ -27,12 +27,17 @@
 //! declares, not a CVE lookup.
 
 mod framework;
+mod lockfile;
 mod manifest;
 mod osv;
+mod reconcile;
 
+pub use lockfile::{LockError, LockKind, Lockfile, UnresolvedSource, is_lockfile, parse_lockfile};
 pub use manifest::{
-    Dependency, Ecosystem, Error, Result, UnresolvedDependency, is_manifest, parse_manifest,
+    Dependency, Ecosystem, Error, Result, UnresolvedDependency, is_manifest, manifest_ecosystem,
+    parse_manifest,
 };
 pub use osv::check;
+pub use reconcile::{ManifestInput, Reconciled, reconcile};
 
 pub(crate) use framework::check as check_wildcard_framework_dependencies;

@@ -1829,3 +1829,55 @@ fn save_snapshots_creates_nothing_when_offline() {
         .code(0);
     assert!(!out.exists());
 }
+
+/// The `reason` of every entry in `coverage.skipped`.
+fn skip_reasons(report: &serde_json::Value) -> Vec<String> {
+    report["coverage"]["skipped"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["reason"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+#[test]
+fn a_lockfile_resolves_a_manifest_range_so_nothing_is_unpinned() {
+    let dir = tree(&[
+        (
+            "pyproject.toml",
+            "[project]\nname = \"app\"\nversion = \"0.1.0\"\ndependencies = [\"requests>=2.0\"]\n",
+        ),
+        (
+            "uv.lock",
+            "version = 1\n\n[[package]]\nname = \"requests\"\nversion = \"2.31.0\"\nsource = { registry = \"https://pypi.org/simple\" }\n",
+        ),
+    ]);
+
+    let report = json_scan(dir.path(), &[]);
+
+    assert!(
+        !skip_reasons(&report).contains(&"unpinned".to_owned()),
+        "{}",
+        report["coverage"]["skipped"]
+    );
+}
+
+#[test]
+fn an_unsupported_lockfile_is_listed_in_coverage_skipped() {
+    let dir = tree(&[
+        (
+            "package.json",
+            "{\n  \"dependencies\": { \"lodash\": \"^4.0.0\" }\n}\n",
+        ),
+        (
+            "package-lock.json",
+            "{ \"lockfileVersion\": 9, \"packages\": {} }",
+        ),
+    ]);
+
+    let report = json_scan(dir.path(), &[]);
+
+    let reasons = skip_reasons(&report);
+    assert!(reasons.contains(&"unsupported".to_owned()), "{reasons:?}");
+    assert!(reasons.contains(&"unpinned".to_owned()), "{reasons:?}");
+}

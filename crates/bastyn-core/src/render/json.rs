@@ -160,7 +160,9 @@ mod tests {
     "web/bundle.js — generated: minified, 65536 bytes per line on average over the first 65536 bytes",
     "assets/logo.py",
     "broken.py",
-    "requirements.txt:18 — opentelemetry-api * is not pinned, so CVEs were not checked"
+    "requirements.txt:18 — opentelemetry-api * is not pinned, so CVEs were not checked",
+    "poetry.lock — lockfile not supported (lock-version 3.0), so its packages were not read",
+    "poetry.lock:40 — internal-lib resolves to a git source, so CVEs were not checked"
   ]"#;
 
     #[test]
@@ -456,6 +458,8 @@ mod tests {
             (SkipReason::Unreadable, "unreadable"),
             (SkipReason::Unparseable, "unparseable"),
             (SkipReason::Unpinned, "unpinned"),
+            (SkipReason::Unsupported, "unsupported"),
+            (SkipReason::UnresolvedSource, "unresolved_source"),
             (SkipReason::Unstated, "unstated"),
         ];
         for (reason, name) in reasons {

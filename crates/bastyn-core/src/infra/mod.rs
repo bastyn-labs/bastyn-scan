@@ -280,6 +280,10 @@ mod tests {
                 !crate::cve::is_manifest(path),
                 "{name} is claimed by both infra and cve"
             );
+            assert!(
+                !crate::cve::is_lockfile(path),
+                "{name} is claimed by both infra and the lockfile reader"
+            );
         }
 
         for name in [
@@ -290,6 +294,11 @@ mod tests {
             "pyproject.toml",
             "package.json",
             "Cargo.toml",
+            "uv.lock",
+            "poetry.lock",
+            "package-lock.json",
+            "pnpm-lock.yaml",
+            "yarn.lock",
         ] {
             assert!(
                 !is_infra_file(Path::new(name)),

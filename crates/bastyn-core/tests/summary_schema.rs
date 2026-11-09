@@ -127,6 +127,8 @@ fn one_of_every_skip() -> Vec<Skip> {
         Skip::unreadable("a.bin".into()),
         Skip::unparseable("broken.py".into()),
         Skip::unpinned("requirements.txt:2".into(), "flask".into(), ">=2.0"),
+        Skip::unsupported_lockfile("poetry.lock".into(), "lock-version 3.0"),
+        Skip::unresolved_source("poetry.lock:40".into(), "internal-lib".into(), "git"),
         serde_json::from_str("\"read back from json\"").unwrap(),
     ]
 }

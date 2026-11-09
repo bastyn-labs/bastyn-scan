@@ -119,6 +119,19 @@ pub fn is_manifest(path: &Path) -> bool {
     )
 }
 
+/// The registry a manifest's dependencies live in, selected by file name.
+///
+/// `None` for a path [`is_manifest`] does not recognise.
+#[must_use]
+pub fn manifest_ecosystem(path: &Path) -> Option<Ecosystem> {
+    match path.file_name().and_then(|name| name.to_str()) {
+        Some("requirements.txt" | "pyproject.toml") => Some(Ecosystem::PyPi),
+        Some("package.json") => Some(Ecosystem::Npm),
+        Some("Cargo.toml") => Some(Ecosystem::CratesIo),
+        _ => None,
+    }
+}
+
 /// Parse one manifest file. Returns the dependencies pinned to an exact
 /// version, and separately the ones declared as a range this module refuses
 /// to guess at.
