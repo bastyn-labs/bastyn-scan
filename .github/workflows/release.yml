@@ -287,6 +287,11 @@ jobs:
           git -C "$tap_dir" init -q
           git -C "$tap_dir" -c user.email="ci@localhost" -c user.name="ci" add -A
           git -C "$tap_dir" -c user.email="ci@localhost" -c user.name="ci" commit -q -m "local tap for CI verification"
+      - name: Trust the local tap
+        # Homebrew refuses to load a formula from a tap it has not been told
+        # to trust, and `brew audit` stops there. This tap is the one this job
+        # just built from the rendered formula.
+        run: brew trust --tap bastyn-labs/tap
       - name: brew audit
         run: brew audit --strict --new bastyn-labs/tap/bastyn
       - name: brew install
