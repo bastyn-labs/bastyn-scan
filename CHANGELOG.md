@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-09
+
 ### Changed
 
 - **Lockfiles are now the source of resolved dependency versions.** `uv.lock`, `poetry.lock`, `package-lock.json`, `pnpm-lock.yaml` and `yarn.lock` are read, and their packages, transitive ones included, are the versions looked up in OSV.dev. A lockfile at a workspace root applies to the member projects it lists. A project with no applicable lockfile is handled from its manifest as before, and a manifest dependency the lockfile does not list keeps the manifest handling. A manifest range that a lockfile resolves is no longer listed as `unpinned`.
@@ -696,7 +698,8 @@ single point in time. This paragraph prints no number, because it drifts every t
 added. See [Measured coverage](README.md#measured-coverage) for the current count, always derived
 from the gate rather than typed in here.
 
-[Unreleased]: https://github.com/BASTYN-labs/bastyn-scan/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/BASTYN-labs/bastyn-scan/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/BASTYN-labs/bastyn-scan/releases/tag/v0.9.0
 [0.8.0]: https://github.com/BASTYN-labs/bastyn-scan/releases/tag/v0.8.0
 [0.7.0]: https://github.com/BASTYN-labs/bastyn-scan/releases/tag/v0.7.0
 [0.6.0]: https://github.com/BASTYN-labs/bastyn-scan/releases/tag/v0.6.0
