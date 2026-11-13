@@ -114,12 +114,24 @@ dependencies = [
 ]
 
 [[package]]
-name = "ast-grep-language"
-version = "0.50.0"
+name = "ast-grep-core"
+version = "0.51.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e7f52d71a3972507f829ae1101f75d1549a9719170c9d6f6b52a153c670b103c"
+checksum = "6cfef0f598a68a0d572d3917e0c20fab452ec33ee9a5eae3ebc12495ad2e2c9c"
 dependencies = [
- "ast-grep-core",
+ "bit-set",
+ "regex",
+ "thiserror",
+ "tree-sitter",
+]
+
+[[package]]
+name = "ast-grep-language"
+version = "0.51.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "84447a0859aebcd5dd4c3eb3cad74509f59b68679ddd014d1650a65381f916fd"
+dependencies = [
+ "ast-grep-core 0.51.1",
  "ignore",
  "serde",
  "tree-sitter",
@@ -165,7 +177,7 @@ dependencies = [
 name = "bastyn-core"
 version = "0.9.0"
 dependencies = [
- "ast-grep-core",
+ "ast-grep-core 0.50.0",
  "ast-grep-language",
  "boon",
  "getrandom 0.4.3",
