@@ -153,7 +153,31 @@ pub(crate) fn run(args: &ScanArgs, global: &GlobalArgs) -> anyhow::Result<Outcom
     // derived from.
     report_summary(args, &report, started_at, finished_at);
 
+    if let Some(path) = &args.debug_unresolved {
+        write_unresolved(args, &options.walk, path)?;
+    }
+
     Ok(outcome)
+}
+
+/// Write the `--debug-unresolved` file: one JSON object per line.
+fn write_unresolved(
+    args: &ScanArgs,
+    walk: &WalkOptions,
+    path: &std::path::Path,
+) -> anyhow::Result<()> {
+    let sinks = bastyn_core::collect_unresolved_sinks(&args.path, walk).with_context(|| {
+        format!(
+            "could not collect unresolved sinks in {}",
+            args.path.display()
+        )
+    })?;
+    let mut text = String::new();
+    for sink in &sinks {
+        text.push_str(&serde_json::to_string(sink).context("could not render JSON")?);
+        text.push('\n');
+    }
+    std::fs::write(path, text).with_context(|| format!("could not write {}", path.display()))
 }
 
 /// Send the anonymous scan summary, unless reporting is off.

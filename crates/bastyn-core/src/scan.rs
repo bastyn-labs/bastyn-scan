@@ -22,7 +22,10 @@ use crate::mcp;
 use crate::observe::{Observer, Phase, Silent};
 use crate::provider_token;
 use crate::report::{Coverage, CoveredSkip, CveStatus, Report, Skip, Summary};
-use crate::rules::{RuleSet, ScanOutcome, SourceLanguage, scan_source_checked};
+use crate::rules::{
+    RuleSet, ScanOutcome, SourceLanguage, UnresolvedSink, scan_source_checked,
+    scan_source_unresolved,
+};
 use crate::skill;
 use crate::walk::{WalkOptions, collect_files};
 
@@ -103,6 +106,46 @@ fn inspect_remote_servers(
         remote::write_snapshots(dir, &outcome.snapshots)?;
     }
     Ok(())
+}
+
+/// List every Python `flow:` rule candidate under `root` whose value's
+/// provenance could not be proven, in file order.
+///
+/// A debugging aid for measuring where recall is lost on real repositories.
+/// It is a separate pass over the tree and is not used by [`scan`]: it never
+/// affects findings, the report or exit codes. Files that cannot be read, and
+/// files the scan treats as generated, are skipped silently; the normal scan
+/// already reports them.
+///
+/// # Errors
+///
+/// Returns an error when the tree cannot be walked or the embedded rules do
+/// not load.
+pub fn collect_unresolved_sinks(root: &Path, walk: &WalkOptions) -> Result<Vec<UnresolvedSink>> {
+    let walked = collect_files(root, walk)?;
+    let ruleset = RuleSet::embedded().map_err(|source| Error::Rules {
+        source: Box::new(source),
+    })?;
+    // An indexed parallel `collect` keeps file order, so the output does not
+    // depend on thread scheduling.
+    let per_file: Vec<Vec<UnresolvedSink>> = walked
+        .files
+        .par_iter()
+        .map(|relative| {
+            if SourceLanguage::from_path(relative) != Some(SourceLanguage::Python) {
+                return Vec::new();
+            }
+            let full = root.join(relative);
+            if generated::inspect(&full).is_some() {
+                return Vec::new();
+            }
+            std::fs::read_to_string(&full).map_or_else(
+                |_| Vec::new(),
+                |contents| scan_source_unresolved(&ruleset, relative, &contents),
+            )
+        })
+        .collect();
+    Ok(per_file.into_iter().flatten().collect())
 }
 
 /// Scan `root`, reporting progress to `observer`.
@@ -792,6 +835,7 @@ mod tests {
     use tempfile::TempDir;
 
     use crate::report::{RemoteServer, RemoteStatus, SkipReason};
+    use crate::rules::UnresolvedOutcome;
 
     fn tree(entries: &[(&str, &str)]) -> TempDir {
         let dir = TempDir::new().unwrap();
@@ -2104,5 +2148,92 @@ source = { registry = "https://pypi.org/simple" }
             assert!(!skill::is_skill_file(path), "{name} is claimed as a skill");
             assert!(SourceLanguage::from_path(path).is_none());
         }
+    }
+
+    const UNRESOLVED_APP: &str = r#"
+import openai
+
+client = openai.OpenAI()
+
+
+def unproven(a, b):
+    return eval(f"{a} {b}")
+
+
+def proven(question):
+    reply = client.chat.completions.create(messages=[{"role": "user", "content": question}])
+    return eval(reply)
+
+
+def closed():
+    return eval("1 + 1")
+"#;
+
+    fn unresolved_lines(root: &Path) -> Vec<UnresolvedSink> {
+        collect_unresolved_sinks(root, &WalkOptions::default()).unwrap()
+    }
+
+    #[test]
+    fn unresolved_sinks_list_only_values_whose_origin_is_unproven() {
+        let dir = tree(&[("app.py", UNRESOLVED_APP)]);
+        let sinks = unresolved_lines(dir.path());
+
+        // `eval(f"{a} {b}")` is on line 8 (the source starts with a newline).
+        // BAS-LLM10-001 has no `unproven` path, so a value with no proven
+        // origin is dropped for want of a source (observed on a real run);
+        // the f-string mixes two parameters, so its own origin is `unknown`.
+        let hit: Vec<&UnresolvedSink> = sinks
+            .iter()
+            .filter(|s| s.rule_id == "BAS-LLM10-001" && s.line == 8)
+            .collect();
+        assert!(!hit.is_empty(), "{sinks:?}");
+        assert!(
+            hit.iter().all(|s| s.file == "app.py"
+                && s.outcome == UnresolvedOutcome::DroppedNoSource
+                && s.origin == "unknown"
+                && s.callee.is_none()
+                && s.captured_kind == "string"),
+            "{hit:?}"
+        );
+
+        // A proven model reply (line 13) and a closed literal (line 17) are
+        // not unresolved for any rule.
+        assert!(
+            sinks.iter().all(|s| s.line != 13 && s.line != 17),
+            "{sinks:?}"
+        );
+    }
+
+    #[test]
+    fn unresolved_sinks_are_sorted_and_stable() {
+        let dir = tree(&[("b.py", UNRESOLVED_APP), ("a/c.py", UNRESOLVED_APP)]);
+        let first = unresolved_lines(dir.path());
+        let second = unresolved_lines(dir.path());
+        assert_eq!(first, second);
+        assert_ne!(first.len(), 0);
+
+        let files: Vec<&str> = first.iter().map(|s| s.file.as_str()).collect();
+        let mut by_file = files.clone();
+        by_file.sort_unstable();
+        assert_eq!(files, by_file, "results follow the walk's file order");
+
+        for pair in first.windows(2) {
+            if pair[0].file == pair[1].file {
+                assert!(
+                    (pair[0].line, &pair[0].rule_id, pair[0].outcome)
+                        < (pair[1].line, &pair[1].rule_id, pair[1].outcome),
+                    "{pair:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn collecting_unresolved_sinks_does_not_change_the_scan() {
+        let dir = tree(&[("app.py", UNRESOLVED_APP)]);
+        let before = serde_json::to_string(&scan(dir.path(), &offline()).unwrap()).unwrap();
+        let _ = unresolved_lines(dir.path());
+        let after = serde_json::to_string(&scan(dir.path(), &offline()).unwrap()).unwrap();
+        assert_eq!(before, after);
     }
 }

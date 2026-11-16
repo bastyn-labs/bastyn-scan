@@ -64,5 +64,8 @@ mod tests_secrets;
 mod tests_supply_chain;
 
 pub(crate) use engine::SourceLanguage;
-pub use engine::{RuleSet, ScanOutcome, scan_source, scan_source_checked};
+pub use engine::{
+    RuleSet, ScanOutcome, UnresolvedOutcome, UnresolvedSink, scan_source, scan_source_checked,
+    scan_source_unresolved,
+};
 pub use error::{Result, RuleError};

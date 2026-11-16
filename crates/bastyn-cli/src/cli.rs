@@ -273,6 +273,12 @@ pub(crate) struct ScanArgs {
     #[arg(long, value_name = "DIR", requires = "inspect_remote")]
     pub(crate) save_snapshots: Option<std::path::PathBuf>,
 
+    /// Debugging aid: write every Python rule candidate whose value's
+    /// provenance could not be proven to FILE as JSON Lines. Does not change
+    /// the scan's output or exit code.
+    #[arg(long, hide = true, value_name = "FILE")]
+    pub(crate) debug_unresolved: Option<std::path::PathBuf>,
+
     /// Do not scan paths matching GLOB. Repeatable.
     ///
     /// Uses `.gitignore` syntax: `dist/` skips every directory called `dist`,

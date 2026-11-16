@@ -1881,3 +1881,94 @@ fn an_unsupported_lockfile_is_listed_in_coverage_skipped() {
     assert!(reasons.contains(&"unsupported".to_owned()), "{reasons:?}");
     assert!(reasons.contains(&"unpinned".to_owned()), "{reasons:?}");
 }
+
+/// Python with one value whose origin the scanner cannot prove.
+const UNRESOLVED: &str = r#"
+def run(a, b):
+    return eval(f"{a} {b}")
+"#;
+
+#[test]
+fn debug_unresolved_is_hidden_from_help() {
+    let dir = tree(&[]);
+    let help = stdout_of({
+        let mut c = bastyn(dir.path());
+        c.args(["scan", "--help"]);
+        c
+    });
+    assert!(!help.contains("debug-unresolved"), "{help}");
+}
+
+#[test]
+fn debug_unresolved_writes_json_lines() {
+    let dir = tree(&[("app.py", UNRESOLVED)]);
+    let out = TempDir::new().unwrap();
+    let file = out.path().join("unresolved.jsonl");
+    let mut c = bastyn(dir.path());
+    c.args(["scan", "--offline", "--debug-unresolved"]);
+    c.arg(&file);
+    // 0 or 1 are both a completed scan; only 2 would mean it could not run.
+    let code = c.output().unwrap().status.code().unwrap();
+    assert!(code < 2, "exit code {code}");
+
+    let text = fs::read_to_string(&file).unwrap();
+    assert!(text.ends_with('\n'), "{text}");
+    let lines: Vec<serde_json::Value> = text
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert!(!lines.is_empty(), "{text}");
+    for line in &lines {
+        let keys: Vec<&str> = line
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        let mut sorted = keys.clone();
+        sorted.sort_unstable();
+        let mut expected = [
+            "file",
+            "line",
+            "rule_id",
+            "outcome",
+            "origin",
+            "callee",
+            "captured_kind",
+        ];
+        expected.sort_unstable();
+        assert_eq!(sorted, expected, "{line}");
+        assert!(line["line"].is_u64());
+        assert!(line["outcome"].is_string());
+    }
+}
+
+#[test]
+fn debug_unresolved_changes_neither_output_nor_exit_code() {
+    let dir = tree(&[("app.py", VULNERABLE), ("other.py", UNRESOLVED)]);
+    let out = TempDir::new().unwrap();
+    let file = out.path().join("unresolved.jsonl");
+
+    let run = |extra: &[&std::ffi::OsStr]| {
+        let mut c = bastyn(dir.path());
+        c.args(["scan", "--offline", "--format", "json"]);
+        c.args(extra);
+        c.output().unwrap()
+    };
+    let plain = run(&[]);
+    let flagged = run(&["--debug-unresolved".as_ref(), file.as_os_str()]);
+    assert_eq!(plain.stdout, flagged.stdout);
+    assert_eq!(plain.status.code(), flagged.status.code());
+    assert!(file.exists());
+}
+
+#[test]
+fn debug_unresolved_to_an_unwritable_path_exits_2() {
+    let dir = tree(&[("app.py", UNRESOLVED)]);
+    let target = TempDir::new().unwrap();
+    let mut c = bastyn(dir.path());
+    c.args(["scan", "--offline", "--debug-unresolved"]);
+    // A directory cannot be written as a file.
+    c.arg(target.path());
+    c.assert().code(2);
+}
