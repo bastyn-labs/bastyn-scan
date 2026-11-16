@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **A string built from a model reply plus another value keeps the model-reply provenance.** For `flow:` rules, a value built by f-string, `+`, `%` or `.format` from a model reply and an untraced value (such as a parameter) now resolves to a model reply instead of unknown, so passing it to SQL execution is now reported as a defect (it was an observation or went unreported). Wrapped values (`int(reply)`, `json.dumps(reply)`) and either-or merges (conditional expressions, `or`, branch-assigned names) are unchanged.
+
 ## [0.9.0] - 2026-11-09
 
 ### Changed
