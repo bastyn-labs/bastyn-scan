@@ -95,11 +95,11 @@ why      = "The model's suggested shell one-liner is run with subprocess.run(...
 [[expect]]
 file     = "vulnerable/llm10_eval_on_model_reply.py"
 line     = 59
-rule     = "BAS-LLM10-017"
+rule     = "BAS-LLM10-003"
 category = "LLM10"
-kind     = "observation"
+kind     = "defect"
 severity = "critical"
-why      = "The f-string interpolates both a traced model reply and an untraced parameter directly into raw SQL, with neither bound as a query parameter -- an unconditional SQL-injection shape regardless of provenance, exactly BAS-LLM10-017's designed scope (the same unconditional-composition philosophy BAS-LLM10-009 applies to shell commands: it reports the composition itself, independent of whatever precedes or feeds it). BAS-LLM10-003's mixed-origin downgrade to an observation exists for cases where provenance can't be established and that absence matters for calibrating confidence; here it doesn't need to, since parameterization is the correct fix regardless of source. BAS-LLM10-003 still fires and is preserved as a secondary_rule_ids entry on this finding, so nothing is silently lost -- it just isn't the top-level displayed finding at this line."
+why      = "The f-string interpolates a traced model reply together with an untraced parameter into raw SQL. String building keeps the model-reply segment, so the value counts as carrying a model reply and the finding is a defect. BAS-LLM10-008 and BAS-LLM10-017 stay as secondary rules on this finding."
 
 [[expect]]
 file     = "vulnerable/model_output_renamed.py"
@@ -2152,3 +2152,34 @@ why      = "The Windows step links to an archive, gives its password and says to
 [[expect_none]]
 file = "clean/skills/payload-warning/SKILL.md"
 why  = "Mentions a snippet site, a password-protected archive and a decoded command piped into a shell only to warn against them."
+
+[[expect]]
+file     = "vulnerable/llm10_mixed_source_string_building.py"
+line     = 25
+rule     = "BAS-LLM10-003"
+category = "LLM10"
+kind     = "defect"
+severity = "critical"
+why      = "A model reply and an untraced parameter are joined by %-formatting into a query string that is passed to cursor.execute(). String building keeps the model-reply segment, so the finding is a defect. BAS-LLM10-008 stays as a secondary rule."
+
+[[expect]]
+file     = "vulnerable/llm10_mixed_source_string_building.py"
+line     = 32
+rule     = "BAS-LLM10-003"
+category = "LLM10"
+kind     = "defect"
+severity = "critical"
+why      = "A model reply and an untraced parameter are joined by str.format into a query string that is passed to cursor.execute(). String building keeps the model-reply segment, so the finding is a defect. BAS-LLM10-008 stays as a secondary rule."
+
+[[expect]]
+file     = "vulnerable/llm10_mixed_source_string_building.py"
+line     = 39
+rule     = "BAS-ZT4-001"
+category = "ZT4"
+kind     = "observation"
+severity = "high"
+why      = "A fetched page and an untraced parameter are built into a note by f-string, and the note is interpolated into a variable named system_prompt. Reported as an observation: the instructions embed external text with no delimiter, but the engine does not claim the page is hostile. BAS-ZT4-002 stays as a secondary rule."
+
+[[expect_none]]
+file = "clean/llm10_mixed_source_near_miss.py"
+why  = "An either-or choice between two literal queries, a parameterised query that binds a model reply and a parameter, and a prompt built only from module-level constants: none contains a model reply in a built string."

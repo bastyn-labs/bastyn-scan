@@ -1192,3 +1192,33 @@ def serve():
 ";
     assert_eq!(path_open_kind(source), Some(crate::finding::Kind::Defect));
 }
+
+/// A string that mixes a model reply with something else contains the reply:
+/// the value's own provenance is ambiguous, but the segment is not.
+#[test]
+fn a_flow_gated_rule_fires_on_a_string_built_from_a_model_reply_and_another_value() {
+    let ruleset = flow_ruleset();
+    let source = "\
+def handle(ticket, flag):
+    reply = client.chat.completions.create(prompt=ticket).choices[0].message.content
+    eval(f\"{reply} {flag}\")
+";
+    let findings = scan_source(&ruleset, Path::new("app/handler.py"), source);
+    let finding = findings
+        .iter()
+        .find(|finding| finding.rule_id == "BAS-FLOW-001")
+        .expect("the rule fires");
+    assert_eq!(finding.kind, crate::finding::Kind::Defect);
+}
+
+/// A reply wrapped in a conversion before it is interpolated is not a model
+/// segment any more.
+#[test]
+fn a_flow_gated_rule_stays_silent_when_the_model_reply_is_wrapped_before_interpolation() {
+    let source = "\
+def handle(ticket, flag):
+    reply = client.chat.completions.create(prompt=ticket).choices[0].message.content
+    eval(f\"{int(reply)} {flag}\")
+";
+    assert!(!fires(&flow_ruleset(), source));
+}

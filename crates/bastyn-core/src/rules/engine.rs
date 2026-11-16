@@ -301,9 +301,23 @@ impl CompiledFlow {
         let Some(sources) = &self.sources else {
             return FlowVerdict::Proven;
         };
-        match graph.source_kind_of(node_id) {
-            Some(kind) if sources.contains(&kind) => FlowVerdict::Proven,
-            _ if self.caller_input && graph.has_input_through_calls(node_id) => FlowVerdict::Proven,
+        let own = graph.source_kind_of(node_id);
+        if own.is_some_and(|kind| sources.contains(&kind)) {
+            return FlowVerdict::Proven;
+        }
+        // A string built out of several parts contains each of its call
+        // segments, even though its own provenance is `Unknown`.
+        if graph
+            .segment_source_kinds(node_id)
+            .iter()
+            .any(|kind| sources.contains(kind))
+        {
+            return FlowVerdict::Proven;
+        }
+        if self.caller_input && graph.has_input_through_calls(node_id) {
+            return FlowVerdict::Proven;
+        }
+        match own {
             // An untraced value takes the unproven path when this clause
             // has one; a value traced to a source this rule does not list
             // is known not to be what the rule is about, so it is dropped

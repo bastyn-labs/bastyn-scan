@@ -112,14 +112,16 @@ impl Prov {
         }
     }
 
-    /// The provenance of a value built out of two others -- an f-string with
-    /// two interpolations, a `+` concatenation, the arms of a conditional
-    /// expression.
+    /// The either-or merge of two provenances: the arms of a conditional
+    /// expression, `or`/`and`, the bindings of a name from different branches.
     ///
-    /// A literal contributes nothing, so it yields to a non-literal: an
-    /// f-string mixing fixed text with a model reply carries the model reply.
-    /// Two disagreeing non-literals give `Unknown`, because the value is one
-    /// of them and the graph cannot say which.
+    /// A literal contributes nothing, so it yields to a non-literal. Two
+    /// disagreeing non-literals give `Unknown`, because the value is one of
+    /// them and the graph cannot say which. String building (f-strings, `+`,
+    /// `%`, `str.format`) is not either-or: it goes through
+    /// [`Resolved::union_with`], which merges provenance the same way and also
+    /// records the call segments the string contains in
+    /// [`Resolved::segment_calls`].
     fn combine(self, other: Self) -> Self {
         match (self, other) {
             (Self::Literal, other) | (other, Self::Literal) => other,
@@ -193,7 +195,17 @@ pub(crate) struct Resolved {
     /// request data or the result of a catalogued model, tool or retrieval
     /// call. Also an OR across segments.
     pub(crate) remote_input: bool,
+    /// Sorted, deduplicated callee paths (the form [`Origin::Call`] carries)
+    /// of the call-derived segments that string building put into this value.
+    /// A side fact: [`Prov`] still says `Unknown` for two disagreeing
+    /// segments. Empty for anything not built as a string, for either-or
+    /// merges, and when more than [`MAX_SEGMENT_CALLS`] distinct callees
+    /// would be recorded (it says less rather than more).
+    pub(crate) segment_calls: Vec<String>,
 }
+
+/// The most call segments [`Resolved::segment_calls`] records.
+const MAX_SEGMENT_CALLS: usize = 8;
 
 impl Resolved {
     fn unknown() -> Self {
@@ -207,6 +219,7 @@ impl Resolved {
             caller_input: false,
             through_calls: false,
             remote_input: false,
+            segment_calls: Vec::new(),
         }
     }
 
@@ -221,6 +234,7 @@ impl Resolved {
             caller_input: false,
             through_calls: false,
             remote_input: false,
+            segment_calls: Vec::new(),
         }
     }
 
@@ -235,6 +249,31 @@ impl Resolved {
             caller_input: self.caller_input || other.caller_input,
             through_calls: self.through_calls || other.through_calls,
             remote_input: self.remote_input || other.remote_input,
+            segment_calls: Vec::new(),
+        }
+    }
+
+    /// The merge used for string building: everything [`Resolved::combine`]
+    /// does, plus [`Resolved::segment_calls`] becomes the union of each
+    /// side's own segment calls and the callee of each side that is itself a
+    /// call. A side whose provenance is a call to a wrapper such as `int` or
+    /// `shlex.quote` contributes that wrapper, never what it wraps.
+    fn union_with(self, other: Self) -> Self {
+        let mut calls: Vec<String> = Vec::new();
+        for side in [&self, &other] {
+            calls.extend(side.segment_calls.iter().cloned());
+            if let Prov::Call { callee } = &side.prov {
+                calls.push(callee.clone());
+            }
+        }
+        calls.sort();
+        calls.dedup();
+        if calls.len() > MAX_SEGMENT_CALLS {
+            calls.clear();
+        }
+        Self {
+            segment_calls: calls,
+            ..self.combine(other)
         }
     }
 }
@@ -452,7 +491,39 @@ impl FlowGraph {
         let Origin::Call { callee } = self.origin_of(node_id)? else {
             return None;
         };
-        classify_source(&callee).or_else(|| {
+        self.classify_callee(&callee)
+    }
+
+    /// The catalogued sources of the call segments string building put into
+    /// the value at `node_id` (see [`Resolved::segment_calls`]), in catalogue
+    /// order, without duplicates.
+    ///
+    /// Unlike [`Self::source_kind_of`], this can name a source for a value
+    /// whose own provenance is `Unknown` because it mixes several segments:
+    /// `f"{model_reply} {user_flag}"` contains the model reply. A segment
+    /// wrapped in another call (`int(reply)`) contributes the wrapper, not
+    /// the reply.
+    pub(crate) fn segment_source_kinds(&self, node_id: usize) -> Vec<SourceKind> {
+        let mut kinds: Vec<SourceKind> = self
+            .resolved
+            .get(&node_id)
+            .map(|resolved| {
+                resolved
+                    .segment_calls
+                    .iter()
+                    .filter_map(|callee| self.classify_callee(callee))
+                    .collect()
+            })
+            .unwrap_or_default();
+        kinds.sort();
+        kinds.dedup();
+        kinds
+    }
+
+    /// The source a call to `callee` is: catalogued, or a local `def` whose
+    /// own return value is catalogued.
+    fn classify_callee(&self, callee: &str) -> Option<SourceKind> {
+        classify_source(callee).or_else(|| {
             let local = callee.rsplit('.').next()?;
             self.source_returns.get(local).copied()
         })
@@ -1694,6 +1765,7 @@ impl<'r, D: Doc> Analyzer<'r, D> {
                             caller_input,
                             through_calls: false,
                             remote_input: false,
+                            segment_calls: Vec::new(),
                         }),
                         scope: inner,
                         branches: Vec::new(),
@@ -1896,9 +1968,9 @@ impl<'r, D: Doc> Analyzer<'r, D> {
                     interpolated = true;
                     if let Some(expr) = part.named_children().next() {
                         let inner = self.resolve(&expr, scope, depth + 1);
-                        answer = answer.combine(inner);
+                        answer = answer.union_with(inner);
                     } else {
-                        answer = answer.combine(Resolved::unknown());
+                        answer = answer.union_with(Resolved::unknown());
                     }
                 }
                 if interpolated {
@@ -1925,7 +1997,7 @@ impl<'r, D: Doc> Analyzer<'r, D> {
                 }),
             // A comparison or a negation produces a bool, not a payload.
             "comparison_operator" | "not_operator" => Resolved::literal(),
-            "binary_operator" | "boolean_operator" => {
+            "boolean_operator" => {
                 let left = node
                     .field("left")
                     .map_or_else(Resolved::unknown, |n| self.resolve(&n, scope, depth + 1));
@@ -1934,7 +2006,16 @@ impl<'r, D: Doc> Analyzer<'r, D> {
                     .map_or_else(Resolved::unknown, |n| self.resolve(&n, scope, depth + 1));
                 left.combine(right)
             }
-            "conditional_expression" | "concatenated_string" | "list" | "tuple" | "set" => {
+            "binary_operator" => self.resolve_binary_operator(node, scope, depth),
+            "concatenated_string" => {
+                let mut answer = Resolved::literal();
+                for child in node.named_children() {
+                    let inner = self.resolve(&child, scope, depth + 1);
+                    answer = answer.union_with(inner);
+                }
+                answer
+            }
+            "conditional_expression" | "list" | "tuple" | "set" => {
                 let children: Vec<_> = node.named_children().collect();
                 if children.is_empty() {
                     return Resolved::literal();
@@ -2163,6 +2244,7 @@ impl<'r, D: Doc> Analyzer<'r, D> {
             caller_input,
             through_calls,
             remote_input,
+            segment_calls: Vec::new(),
             prov: Prov::Call { callee },
         }
     }
@@ -2259,6 +2341,40 @@ impl<'r, D: Doc> Analyzer<'r, D> {
         })
     }
 
+    /// A binary operator. `+` and `%` build strings, so they union their
+    /// operands' call segments; for `%` a tuple on the right is the list of
+    /// values substituted into the left string, so its elements are parts of
+    /// the string too. Every other operator is the either-or merge.
+    fn resolve_binary_operator(
+        &mut self,
+        node: &Node<'r, D>,
+        scope: usize,
+        depth: usize,
+    ) -> Resolved {
+        let left = node
+            .field("left")
+            .map_or_else(Resolved::unknown, |n| self.resolve(&n, scope, depth + 1));
+        let operator = node.field("operator").map(|n| n.text().to_string());
+        let Some(right_node) = node.field("right") else {
+            return left.combine(Resolved::unknown());
+        };
+        let builds_string = matches!(operator.as_deref(), Some("+" | "%"));
+        if !builds_string {
+            let right = self.resolve(&right_node, scope, depth + 1);
+            return left.combine(right);
+        }
+        if operator.as_deref() == Some("%") && right_node.kind() == "tuple" {
+            let mut answer = left;
+            for element in right_node.named_children() {
+                let inner = self.resolve(&element, scope, depth + 1);
+                answer = answer.union_with(inner);
+            }
+            return answer;
+        }
+        let right = self.resolve(&right_node, scope, depth + 1);
+        left.union_with(right)
+    }
+
     /// `"...{}".format(a, b=c)`: the result is text built from the template
     /// and every argument, so it carries all of their provenance.
     ///
@@ -2283,7 +2399,7 @@ impl<'r, D: Doc> Analyzer<'r, D> {
             return Some(answer);
         };
         if arguments.kind() != "argument_list" {
-            return Some(answer.combine(Resolved::unknown()));
+            return Some(answer.union_with(Resolved::unknown()));
         }
         for argument in arguments.named_children() {
             let value = match argument.kind().as_ref() {
@@ -2294,7 +2410,7 @@ impl<'r, D: Doc> Analyzer<'r, D> {
             let inner = value.map_or_else(Resolved::unknown, |value| {
                 self.resolve(&value, scope, depth + 1)
             });
-            answer = answer.combine(inner);
+            answer = answer.union_with(inner);
         }
         Some(answer)
     }
@@ -2488,6 +2604,7 @@ impl<'r, D: Doc> Analyzer<'r, D> {
                     caller_input: previous.caller_input || resolved.caller_input,
                     through_calls: previous.through_calls || resolved.through_calls,
                     remote_input: previous.remote_input || resolved.remote_input,
+                    segment_calls: Vec::new(),
                 },
                 Some(previous) => Resolved {
                     prov: Prov::Unknown,
@@ -2499,6 +2616,7 @@ impl<'r, D: Doc> Analyzer<'r, D> {
                     caller_input: previous.caller_input || resolved.caller_input,
                     through_calls: previous.through_calls || resolved.through_calls,
                     remote_input: previous.remote_input || resolved.remote_input,
+                    segment_calls: Vec::new(),
                 },
             });
         }
@@ -3869,5 +3987,154 @@ def install(package):
         let open_one = names.next().expect("second element");
         assert!(graph.is_closed(fixed.node_id()));
         assert!(!graph.is_closed(open_one.node_id()));
+    }
+
+    // ---- string-building call segments -----------------------------------
+
+    const REPLY: &str = "reply = client.chat.completions.create(prompt=ticket)";
+
+    /// The origin and call-segment sources of the argument of `eval(...)` in
+    /// `def handle(ticket, param, other, cond):` with `body` as its body.
+    fn segments_of(body: &str) -> (Option<Origin>, Vec<SourceKind>) {
+        let mut source = String::from("def handle(ticket, param, other, cond):\n");
+        for line in body.lines() {
+            source.push_str("    ");
+            source.push_str(line);
+            source.push('\n');
+        }
+        let (root, graph) = build_python_graph(&source);
+        let arg = argument_node_of_call(&root, "eval");
+        (graph.origin_of(arg), graph.segment_source_kinds(arg))
+    }
+
+    fn contains_model_output(body: &str) -> bool {
+        segments_of(body).1.contains(&SourceKind::ModelOutput)
+    }
+
+    #[test]
+    fn an_f_string_records_its_model_segment_while_its_origin_stays_unknown() {
+        let (origin, kinds) = segments_of(&format!("{REPLY}\neval(f\"{{reply}} {{param}}\")"));
+        assert_eq!(origin, Some(Origin::Unknown));
+        assert_eq!(kinds, vec![SourceKind::ModelOutput]);
+    }
+
+    #[test]
+    fn every_string_building_form_records_its_model_segment() {
+        for expression in [
+            "reply + \" \" + other",
+            "\"%s %s\" % (reply, other)",
+            "\"%s\" % reply",
+            "\"{} {}\".format(reply, other)",
+            "\"{x} {y}\".format(x=reply, y=other)",
+            "\"a\" f\"{reply}\" f\"{other}\"",
+        ] {
+            assert!(
+                contains_model_output(&format!("{REPLY}\neval({expression})")),
+                "no model segment for `{expression}`"
+            );
+        }
+    }
+
+    #[test]
+    fn either_or_merges_record_no_segments() {
+        for body in [
+            format!("{REPLY}\neval(reply if cond else other)"),
+            format!("{REPLY}\neval(other or reply)"),
+            format!("{REPLY}\nif cond:\n    name = reply\nelse:\n    name = other\neval(name)"),
+        ] {
+            assert_eq!(segments_of(&body).1, Vec::new(), "for `{body}`");
+        }
+    }
+
+    #[test]
+    fn a_wrapped_model_segment_does_not_leak() {
+        for expression in [
+            "f\"{int(reply)} {param}\"",
+            "f\"{shlex.quote(reply)} {param}\"",
+            "f\"{json.dumps(reply)} {param}\"",
+        ] {
+            assert!(
+                !contains_model_output(&format!("{REPLY}\neval({expression})")),
+                "model segment leaked through `{expression}`"
+            );
+        }
+        assert!(!contains_model_output(&format!(
+            "{REPLY}\nsafe = int(reply)\neval(f\"{{safe}} {{param}}\")"
+        )));
+    }
+
+    #[test]
+    fn a_local_wrapper_around_a_model_call_is_a_model_segment() {
+        let source = "\
+def ask():
+    return client.chat.completions.create(prompt=\"x\")
+
+
+def handle(param):
+    eval(f\"{ask()} {param}\")
+";
+        let (root, graph) = build_python_graph(source);
+        let arg = argument_node_of_call(&root, "eval");
+        assert!(
+            graph
+                .segment_source_kinds(arg)
+                .contains(&SourceKind::ModelOutput)
+        );
+    }
+
+    #[test]
+    fn more_than_eight_distinct_call_segments_record_nothing() {
+        let calls: Vec<String> = (0..8).map(|i| format!("f{i}()")).collect();
+        let template = "{}".repeat(9);
+        let body = format!(
+            "{REPLY}\neval(\"{template}\".format(reply, {}))",
+            calls.join(", ")
+        );
+        assert_eq!(segments_of(&body).1, Vec::new());
+        // Eight is still recorded (seven helpers plus the model reply).
+        let calls: Vec<String> = (0..7).map(|i| format!("f{i}()")).collect();
+        let template = "{}".repeat(8);
+        let body = format!(
+            "{REPLY}\neval(\"{template}\".format(reply, {}))",
+            calls.join(", ")
+        );
+        assert!(contains_model_output(&body));
+    }
+
+    #[test]
+    fn two_different_parameters_stay_unknown_and_not_passthrough_eligible() {
+        let source = "\
+import subprocess
+
+
+def run(first, second):
+    subprocess.run(f\"{first} {second}\", shell=True)
+";
+        let (root, graph) = build_python_graph(source);
+        let call = root
+            .root()
+            .dfs()
+            .find(|node| {
+                node.kind() == "call"
+                    && node
+                        .field("function")
+                        .is_some_and(|f| f.text() == "subprocess.run")
+            })
+            .expect("a subprocess.run call");
+        let arg = call
+            .field("arguments")
+            .and_then(|args| args.named_children().next())
+            .expect("subprocess.run's first argument");
+
+        assert_eq!(graph.origin_of(arg.node_id()), Some(Origin::Unknown));
+        assert_eq!(graph.segment_source_kinds(arg.node_id()), Vec::new());
+        assert!(!graph.is_passthrough_observation_eligible(&call, &arg));
+    }
+
+    #[test]
+    fn a_string_bound_to_a_name_keeps_its_model_segment() {
+        assert!(contains_model_output(&format!(
+            "{REPLY}\nmsg = f\"{{reply}} {{param}}\"\neval(msg)"
+        )));
     }
 }
