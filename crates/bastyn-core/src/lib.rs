@@ -42,7 +42,8 @@ pub use error::{Error, Result};
 pub use finding::{Confidence, Finding, Kind, Location, Severity};
 pub use observe::{Observer, Phase, Silent};
 pub use report::{Coverage, CoveredSkip, CveStatus, RemoteServer, RemoteStatus, Report, Summary};
-pub use scan::{ScanOptions, scan, scan_observed};
+pub use rules::{UnresolvedOutcome, UnresolvedSink};
+pub use scan::{ScanOptions, collect_unresolved_sinks, scan, scan_observed};
 pub use walk::{Traversal, WalkOptions, collect_files};
 
 /// The version of this crate, as declared in `Cargo.toml`.

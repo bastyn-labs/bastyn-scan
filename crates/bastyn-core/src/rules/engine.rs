@@ -103,10 +103,11 @@ use ast_grep_core::ops::Any;
 use ast_grep_core::tree_sitter::StrDoc;
 use ast_grep_core::{AstGrep, Doc, Node};
 use ast_grep_language::{JavaScript, LanguageExt, Python, Tsx, TypeScript};
+use serde::Serialize;
 
 use crate::category::Category;
 use crate::finding::{Confidence, Finding, Kind, Location, Severity};
-use crate::flow::graph::{callee_path as flow_graph_callee_path, contains_sink_call};
+use crate::flow::graph::{Origin, callee_path as flow_graph_callee_path, contains_sink_call};
 use crate::flow::{FlowGraph, FlowLanguage, SinkKind, SourceKind, guards, shadow};
 use crate::test_path::is_test_path;
 
@@ -210,6 +211,44 @@ enum FlowVerdict {
     Unproven,
     /// Reported with the rule's declared kind.
     Proven,
+}
+
+/// Why a Python `flow:` candidate whose value's provenance was not proven is
+/// listed by [`scan_source_unresolved`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UnresolvedOutcome {
+    /// The rule has an `unproven` path and the value took it: no origin was
+    /// proven, and the rule would report an observation if its `requires`
+    /// holds.
+    Unproven,
+    /// The rule has no `unproven` path, so the candidate was dropped because
+    /// no source could be proven for its value. It is neither closed over
+    /// literals, nor dominated by a guard, nor traced to any catalogued
+    /// source.
+    DroppedNoSource,
+}
+
+/// One Python `flow:` rule candidate whose value's provenance could not be
+/// proven. A debugging aid for measuring where recall is lost on real code;
+/// it never affects a scan's findings.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct UnresolvedSink {
+    /// Path of the file, as given to [`scan_source_unresolved`].
+    pub file: String,
+    /// 1-based line of the matched node.
+    pub line: usize,
+    /// Id of the rule whose `flow:` clause was evaluated.
+    pub rule_id: String,
+    /// What the clause concluded.
+    pub outcome: UnresolvedOutcome,
+    /// What the flow graph knows about the value's origin: `literal`,
+    /// `parameter`, `call` or `unknown`.
+    pub origin: String,
+    /// The callee path as written, when `origin` is `call`.
+    pub callee: Option<String>,
+    /// The tree-sitter node kind of the captured value.
+    pub captured_kind: String,
 }
 
 /// A validated `flow.unproven` clause.
@@ -326,6 +365,87 @@ impl CompiledFlow {
             Some(_) | None => FlowVerdict::Drop,
         }
     }
+}
+
+impl CompiledFlow {
+    /// Whether `verdict` (this clause's verdict for `node_id`) leaves the
+    /// value's provenance unproven, and how. A drop for any other reason --
+    /// closed value, dominating guard, or a source proven but not listed --
+    /// is not unresolved. Does not alter [`Self::verdict`].
+    fn unresolved_outcome(
+        &self,
+        graph: &FlowGraph,
+        node_id: usize,
+        verdict: FlowVerdict,
+    ) -> Option<UnresolvedOutcome> {
+        match verdict {
+            FlowVerdict::Proven => None,
+            FlowVerdict::Unproven => Some(UnresolvedOutcome::Unproven),
+            FlowVerdict::Drop => {
+                if graph.is_closed(node_id) {
+                    return None;
+                }
+                if self.unguarded && guards::is_guarded(graph, node_id) {
+                    return None;
+                }
+                let no_source = graph.source_kind_of(node_id).is_none()
+                    && graph.segment_source_kinds(node_id).is_empty();
+                no_source.then_some(UnresolvedOutcome::DroppedNoSource)
+            }
+        }
+    }
+}
+
+/// Whether a candidate with this `verdict` is reported, and if so whether as
+/// an unproven observation. `None` means it is not reported.
+fn reported_as_unproven<D: Doc>(
+    flow: &CompiledFlow,
+    verdict: FlowVerdict,
+    env: &MetaVarEnv<'_, D>,
+) -> Option<bool> {
+    match verdict {
+        FlowVerdict::Drop => None,
+        FlowVerdict::Proven => Some(false),
+        FlowVerdict::Unproven => flow
+            .unproven
+            .as_ref()
+            .is_some_and(|u| u.met(env))
+            .then_some(true),
+    }
+}
+
+/// When a collector is present, record `captured` as unresolved if `verdict`
+/// leaves its provenance unproven. Does nothing without a collector.
+fn record_unresolved<D: Doc>(
+    collector: Option<&mut Vec<UnresolvedSink>>,
+    rule: &CompiledRule,
+    relative_path: &Path,
+    matched: &Node<'_, D>,
+    captured: &Node<'_, D>,
+    graph: &FlowGraph,
+    verdict: FlowVerdict,
+) {
+    let (Some(sink), Some(flow)) = (collector, &rule.flow) else {
+        return;
+    };
+    let Some(outcome) = flow.unresolved_outcome(graph, captured.node_id(), verdict) else {
+        return;
+    };
+    let (origin, callee) = match graph.origin_of(captured.node_id()) {
+        Some(Origin::Literal) => ("literal", None),
+        Some(Origin::Parameter) => ("parameter", None),
+        Some(Origin::Call { callee }) => ("call", Some(callee)),
+        Some(Origin::Unknown) | None => ("unknown", None),
+    };
+    sink.push(UnresolvedSink {
+        file: relative_path.display().to_string(),
+        line: matched.start_pos().line() + 1,
+        rule_id: rule.id.clone(),
+        outcome,
+        origin: origin.to_owned(),
+        callee,
+        captured_kind: captured.kind().into_owned(),
+    });
 }
 
 /// A rule's `exclude_if:` clause, validated at load time.
@@ -969,16 +1089,51 @@ pub enum ScanOutcome {
 #[must_use]
 pub fn scan_source_checked(ruleset: &RuleSet, relative_path: &Path, source: &str) -> ScanOutcome {
     match SourceLanguage::from_path(relative_path) {
-        Some(SourceLanguage::Python) => scan_with(&ruleset.python, Python, relative_path, source),
+        Some(SourceLanguage::Python) => {
+            scan_with(&ruleset.python, Python, relative_path, source, None)
+        }
         Some(SourceLanguage::Javascript) => {
-            scan_with(&ruleset.javascript, JavaScript, relative_path, source)
+            scan_with(&ruleset.javascript, JavaScript, relative_path, source, None)
         }
         Some(SourceLanguage::Typescript) => {
-            scan_with(&ruleset.typescript, TypeScript, relative_path, source)
+            scan_with(&ruleset.typescript, TypeScript, relative_path, source, None)
         }
-        Some(SourceLanguage::Tsx) => scan_with(&ruleset.tsx, Tsx, relative_path, source),
+        Some(SourceLanguage::Tsx) => scan_with(&ruleset.tsx, Tsx, relative_path, source, None),
         None => ScanOutcome::Unparseable,
     }
+}
+
+/// List every Python `flow:` rule candidate in one file whose value's
+/// provenance could not be proven, sorted by line, rule id and outcome and
+/// without duplicates.
+///
+/// A debugging aid: it runs the same Python matching as
+/// [`scan_source_checked`] and discards the findings. Files in other
+/// languages, and Python that does not parse, yield an empty list.
+#[must_use]
+pub fn scan_source_unresolved(
+    ruleset: &RuleSet,
+    relative_path: &Path,
+    source: &str,
+) -> Vec<UnresolvedSink> {
+    if SourceLanguage::from_path(relative_path) != Some(SourceLanguage::Python) {
+        return Vec::new();
+    }
+    let mut unresolved = Vec::new();
+    let outcome = scan_with(
+        &ruleset.python,
+        Python,
+        relative_path,
+        source,
+        Some(&mut unresolved),
+    );
+    if matches!(outcome, ScanOutcome::Unparseable) {
+        return Vec::new();
+    }
+    unresolved
+        .sort_by(|a, b| (a.line, &a.rule_id, a.outcome).cmp(&(b.line, &b.rule_id, b.outcome)));
+    unresolved.dedup();
+    unresolved
 }
 
 /// Run every applicable rule in `ruleset` over one file's source, discarding
@@ -1009,6 +1164,7 @@ fn scan_with<L: LanguageExt + Copy>(
     lang: L,
     relative_path: &Path,
     source: &str,
+    mut collector: Option<&mut Vec<UnresolvedSink>>,
 ) -> ScanOutcome {
     let Ok(root) = AstGrep::<StrDoc<L>>::try_new(source, lang) else {
         return ScanOutcome::Unparseable;
@@ -1080,20 +1236,21 @@ fn scan_with<L: LanguageExt + Copy>(
                 }
                 let graph =
                     graph.get_or_insert_with(|| FlowGraph::build(&node, FlowLanguage::Python));
-                match flow.verdict(graph, captured.node_id()) {
-                    FlowVerdict::Drop => continue,
-                    FlowVerdict::Proven => {}
-                    FlowVerdict::Unproven => {
-                        if !flow
-                            .unproven
-                            .as_ref()
-                            .is_some_and(|u| u.met(candidate.get_env()))
-                        {
-                            continue;
-                        }
-                        unproven = true;
-                    }
-                }
+                let verdict = flow.verdict(graph, captured.node_id());
+                record_unresolved(
+                    collector.as_deref_mut(),
+                    rule,
+                    relative_path,
+                    matched,
+                    captured,
+                    graph,
+                    verdict,
+                );
+                let Some(is_unproven) = reported_as_unproven(flow, verdict, candidate.get_env())
+                else {
+                    continue;
+                };
+                unproven = is_unproven;
             }
             // Keyed on who can reach this call, not on whether the value's
             // origin is provable -- see `passthrough_observation_for`.
