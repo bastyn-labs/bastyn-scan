@@ -32,6 +32,7 @@ cargo test --workspace --all-features --locked
 cargo build --release --locked
 cargo doc --workspace --no-deps --all-features --locked   # with RUSTDOCFLAGS="-D warnings"
 cargo deny --all-features check                           # requires: cargo install cargo-deny
+cargo llvm-cov --workspace --all-features --locked --fail-under-lines 95   # requires: cargo install cargo-llvm-cov
 ```
 
 `--locked` makes CI fail rather than silently update `Cargo.lock`. Run it locally too; a lockfile change should be a deliberate commit. CI also sets `RUSTFLAGS=-D warnings`, so a warning you can ignore locally is a build failure there. Cargo passes `--cap-lints allow` to dependencies, so that only ever bites on our own code.
