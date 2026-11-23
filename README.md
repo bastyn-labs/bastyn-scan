@@ -10,6 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/BASTYN-labs/bastyn-scan/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/BASTYN-labs/bastyn-scan/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://codecov.io/gh/BASTYN-labs/bastyn-scan"><img alt="Coverage" src="https://codecov.io/gh/BASTYN-labs/bastyn-scan/graph/badge.svg"></a>
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg"></a>
   <a href="https://github.com/BASTYN-labs/bastyn-scan/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/BASTYN-labs/bastyn-scan?sort=semver&display_name=tag"></a>
   <img alt="MSRV" src="https://img.shields.io/badge/rustc-1.90%2B-orange.svg">
