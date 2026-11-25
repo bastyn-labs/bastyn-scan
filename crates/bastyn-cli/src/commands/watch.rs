@@ -510,7 +510,7 @@ mod hooks {
 
 #[cfg(test)]
 mod tests {
-    use super::{RED, RESET, Renderer, Verdict, duration_text, host_port, severity_word};
+    use super::{RED, RESET, Renderer, duration_text, host_port, severity_word};
     use bastyn_core::Severity;
     use bastyn_core::watch::{Alert, Event, WatchConfig};
     use std::path::PathBuf;
@@ -572,6 +572,60 @@ mod tests {
     }
 
     #[test]
+    fn retries_drops_and_watcher_problems_are_reported_on_stderr() {
+        let mut renderer = renderer(false, true);
+        let alert = alert();
+        let key = alert.key.clone();
+        renderer.render(&Event::Found(alert));
+
+        let retrying = renderer.render(&Event::DeliveryRetrying {
+            key: key.clone(),
+            attempt: 1,
+            wait: Duration::from_secs(2),
+        });
+        assert!(retrying[0].to_stderr);
+        assert_eq!(
+            retrying[0].text,
+            "bastyn: delivery attempt 1 failed, retrying in 2s: BAS-SKILL-013 skills/x/SKILL.md:7\n"
+        );
+
+        let dropped = renderer.render(&Event::DeliveryFailed {
+            key: key.clone(),
+            reason: "HTTP 401".to_owned(),
+            will_retry: false,
+        });
+        assert_eq!(
+            dropped[0].text,
+            "bastyn: delivery failed, alert dropped: BAS-SKILL-013 skills/x/SKILL.md:7 (HTTP 401)\n"
+        );
+        // A dropped alert is forgotten, so a later message cannot name it.
+        let later = renderer.render(&Event::Delivered { key });
+        assert_eq!(later[0].text, "bastyn: delivered an alert\n");
+
+        let scan = renderer.render(&Event::ScanFailed {
+            reason: "unreadable".to_owned(),
+        });
+        assert_eq!(scan[0].text, "bastyn: scan failed: unreadable\n");
+        let overflow = renderer.render(&Event::QueueOverflow { dropped: 3 });
+        assert_eq!(
+            overflow[0].text,
+            "bastyn: 3 alert(s) dropped because the delivery queue is full\n"
+        );
+        let state = renderer.render(&Event::StateWriteFailed {
+            reason: "disk full".to_owned(),
+        });
+        assert_eq!(
+            state[0].text,
+            "bastyn: could not save delivered alerts (disk full); a restart may send them again\n"
+        );
+        assert!(
+            [&scan, &overflow, &state]
+                .iter()
+                .all(|out| out[0].to_stderr)
+        );
+    }
+
+    #[test]
     fn terminal_only_watching_is_silent_about_delivery() {
         let mut renderer = renderer(false, false);
         let alert = alert();
@@ -595,6 +649,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn the_supervisor_restarts_only_after_a_crash() {
+        use super::Verdict;
         use std::os::unix::process::ExitStatusExt as _;
         use std::process::ExitStatus;
         let exited = |code: i32| ExitStatus::from_raw(code << 8);

@@ -974,6 +974,20 @@ mod tests {
     }
 
     #[test]
+    fn deletion_matches_less_common_shapes() {
+        for body in [
+            "Delete this directory.",
+            "Delete all files and folders in ./",
+            "Done cleaning. rm -rf ~",
+            "Run `rm -rf ~`, then continue.",
+            "Run rm -rf ~; echo done",
+            "Step one:\nDelete everything in ./",
+        ] {
+            assert_eq!(deletions(body).len(), 1, "{body}");
+        }
+    }
+
+    #[test]
     fn deletion_silent_near_misses() {
         for body in [
             "Never delete all the files in ./",
