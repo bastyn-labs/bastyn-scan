@@ -17,9 +17,11 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
-use std::io::Write as _;
+use std::io::{Read as _, Write as _};
 use std::path::Path;
-use std::process::{Command, ExitStatus};
+use std::process::{Command, ExitStatus, Stdio};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use anyhow::Context as _;
@@ -78,13 +80,19 @@ fn supervise() -> anyhow::Result<u8> {
     let mut pause = RESTART_MIN;
     loop {
         let started = Instant::now();
-        let status = Command::new(&exe)
+        let mut child = Command::new(&exe)
             .args(std::env::args_os().skip(1))
             .env(WORKER_ENV, "1")
+            .stdin(Stdio::piped())
             .spawn()
-            .context("could not start the watch worker")?
+            .context("could not start the watch worker")?;
+        // The worker reads this pipe to learn when the supervisor is gone, so
+        // it must stay open until the worker has ended: `wait` would close it.
+        let lifeline = child.stdin.take();
+        let status = child
             .wait()
             .context("could not wait for the watch worker")?;
+        drop(lifeline);
         match verdict(status) {
             Verdict::Stop(code) => return Ok(code),
             Verdict::Restart => {}
@@ -165,7 +173,7 @@ fn worker(args: &WatchArgs, global: &GlobalArgs) -> anyhow::Result<u8> {
     let output_closed = Cell::new(false);
     #[cfg(feature = "test-endpoint")]
     let delivered = Cell::new(false);
-    let parent = parent_pid();
+    let supervisor_gone = watch_supervisor();
 
     let mut emit = |event: Event| {
         #[cfg(feature = "test-endpoint")]
@@ -183,7 +191,7 @@ fn worker(args: &WatchArgs, global: &GlobalArgs) -> anyhow::Result<u8> {
         if delivered.get() {
             hooks::crash_once();
         }
-        output_closed.get() || supervisor_gone(parent)
+        output_closed.get() || supervisor_gone.load(Ordering::SeqCst)
     };
 
     let none = NoReporter;
@@ -250,28 +258,21 @@ fn host_port(url: &str) -> &str {
     rest.split(['/', '?', '#']).next().unwrap_or(rest)
 }
 
-/// The process id of whoever started this process.
-#[cfg(unix)]
-fn parent_pid() -> u32 {
-    std::os::unix::process::parent_id()
-}
-
-#[cfg(not(unix))]
-fn parent_pid() -> u32 {
-    0
-}
-
-/// Whether the parent has changed since start, which means the supervisor
-/// died and this worker was adopted by another process. On other platforms
-/// the check does not exist.
-#[cfg(unix)]
-fn supervisor_gone(original: u32) -> bool {
-    std::os::unix::process::parent_id() != original
-}
-
-#[cfg(not(unix))]
-fn supervisor_gone(_original: u32) -> bool {
-    false
+/// Starts a thread that reads the pipe the supervisor holds open, and returns
+/// a flag that turns true when the pipe ends, which means the supervisor is
+/// gone. A worker that outlived its supervisor would keep the terminal's
+/// output open and nobody would restart it.
+fn watch_supervisor() -> Arc<AtomicBool> {
+    let gone = Arc::new(AtomicBool::new(false));
+    let flag = Arc::clone(&gone);
+    std::thread::spawn(move || {
+        let mut stdin = std::io::stdin().lock();
+        let mut buffer = [0_u8; 64];
+        // Nothing is ever sent; a read ends only when the pipe closes.
+        while matches!(stdin.read(&mut buffer), Ok(n) if n > 0) {}
+        flag.store(true, Ordering::SeqCst);
+    });
+    gone
 }
 
 /// The reporter of terminal-only watching: it takes every alert, so the
