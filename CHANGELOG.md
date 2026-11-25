@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`bastyn --watch <PATH>` watches skill and instruction files and reports new findings as they appear.** Defects and observations rated high or above are printed in red and, with `--reporter openclaw --report-url <URL>`, sent once each to an OpenClaw webhook (token only from `BASTYN_OPENCLAW_TOKEN`; plain `http` only for loopback hosts; optional `--openclaw-agent-id`). The file text is never sent. Failed deliveries are retried (three retries after 2, 4 and 8 seconds, then a 60 second wait and again), delivered alerts are remembered on disk, and a supervisor restarts the worker after a crash. Watch mode is offline and text only; `--format json` and `--format sarif` with `--watch` exit with code 2. `scan`, `project-id` and `inspect-server` are unchanged, and a bare `bastyn` still exits with code 2.
+- **`BAS-SKILL-013` reports text that tells the agent to delete everything.** An imperative `delete`, `remove`, `erase`, `wipe`, `destroy`, `purge` or `shred` (or `rm -rf`) whose object is a whole scope: all files, `./`, `~`, `/`, the current or home directory, the entire disk or repository, or a format of a disk. A target narrowed to a sub-path, a condition or an exception is not reported, and neither is text that refuses, warns against or quotes the command. Observation.
+- **`BAS-SKILL-014` reports text that tells the agent to download an executable.** An imperative download or fetch (or `curl`, `wget`, `iwr`) in the same sentence as an executable file name or bare extension such as `.exe`, `.msi` or `.dmg`. It is skipped when a checksum or signature check sits in the same or the next sentence, and when `BAS-SKILL-010` or `-012` already reports the line. Observation.
+- Both new rules read skill manifests, a skill's text files and agent instruction files (not MCP configurations), and report one finding per match, each at its own line and column.
+
 ### Changed
 
 - **A string built from a model reply plus another value keeps the model-reply provenance.** For `flow:` rules, a value built by f-string, `+`, `%` or `.format` from a model reply and an untraced value (such as a parameter) now resolves to a model reply instead of unknown, so passing it to SQL execution is now reported as a defect (it was an observation or went unreported). Wrapped values (`int(reply)`, `json.dumps(reply)`) and either-or merges (conditional expressions, `or`, branch-assigned names) are unchanged.

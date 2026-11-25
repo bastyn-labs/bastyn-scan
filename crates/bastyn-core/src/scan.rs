@@ -17,6 +17,7 @@ use crate::finding::{Finding, Kind};
 use crate::generated;
 use crate::infra;
 use crate::inspect::{Limits, remote};
+use crate::instruction_hazard::{self, inspect as inspect_hazards};
 use crate::instructions;
 use crate::mcp;
 use crate::observe::{Observer, Phase, Silent};
@@ -539,6 +540,52 @@ fn biggest_first(root: &Path, files: &[PathBuf], skill_dirs: &BTreeSet<PathBuf>)
     schedule
 }
 
+/// Which of the instruction-text analysers claim a file.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct TextKinds {
+    /// The file name is an agent instruction file.
+    pub(crate) instruction_file: bool,
+    /// The file is a `SKILL.md` manifest.
+    pub(crate) skill_file: bool,
+    /// The file is a text file of a skill.
+    pub(crate) skill_reference: bool,
+}
+
+/// The instruction, skill manifest and skill reference checks over one file's
+/// text. Shared by the full scan and the watch engine so both run the same
+/// analysers.
+pub(crate) fn inspect_instruction_text(
+    relative: &Path,
+    contents: &str,
+    kinds: TextKinds,
+) -> Vec<Finding> {
+    let mut findings = Vec::new();
+
+    // A skill reference file gets the hidden-Unicode check from
+    // `skill::inspect_reference` below, so it is not scanned for it twice when
+    // its name is also an instruction file name.
+    if kinds.instruction_file && !kinds.skill_reference {
+        // An agent instruction file (or an MCP config, which can inline
+        // a tool description too) is text a human reviews but a model
+        // also reads -- the one place a hidden Unicode payload matters.
+        findings.extend(instructions::inspect(relative, contents));
+    }
+
+    if kinds.skill_file {
+        // A SKILL.md manifest: frontmatter completeness, embedded prompt
+        // injection, and excessive-agency language -- see `crate::skill`.
+        findings.extend(skill::inspect(relative, contents));
+    }
+
+    if kinds.skill_reference {
+        // A text file of a skill, read by the agent when the skill points to
+        // it: the phrase and hidden Unicode checks, not the manifest checks.
+        findings.extend(skill::inspect_reference(relative, contents));
+    }
+
+    findings
+}
+
 /// Run every analyser that claims `relative` over it.
 ///
 /// `None` when no analyser wants the file at all — it is never opened, and
@@ -664,32 +711,22 @@ fn analyse_file(
     out.covered.instruction_file =
         instruction_file && !mcp_config && !skill_file && !skill_reference;
 
-    // A skill reference file gets the hidden-Unicode check from
-    // `skill::inspect_reference` below, so it is not scanned for it twice when
-    // its name is also an instruction file name.
-    if instruction_file && !skill_reference {
-        // An agent instruction file (or an MCP config, which can inline
-        // a tool description too) is text a human reviews but a model
-        // also reads -- the one place a hidden Unicode payload matters.
-        out.findings
-            .extend(instructions::inspect(relative, &contents));
-    }
-
-    if skill_file {
-        // A SKILL.md manifest: frontmatter completeness, embedded prompt
-        // injection, and excessive-agency language -- see `crate::skill`.
-        out.findings.extend(skill::inspect(relative, &contents));
-    }
-
-    if skill_reference {
-        // A text file of a skill, read by the agent when the skill points to
-        // it: the phrase and hidden Unicode checks, not the manifest checks.
-        out.findings
-            .extend(skill::inspect_reference(relative, &contents));
-    }
+    out.findings.extend(inspect_instruction_text(
+        relative,
+        &contents,
+        TextKinds {
+            instruction_file,
+            skill_file,
+            skill_reference,
+        },
+    ));
 
     if skill_script {
         out.findings.extend(skill::scan_script(relative, &contents));
+    }
+
+    if instruction_hazard::is_hazard_target(relative, skill_dirs) {
+        out.findings.extend(inspect_hazards(relative, &contents));
     }
 
     if env_file {

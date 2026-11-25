@@ -12,6 +12,7 @@ The design rule behind everything: **say less, be right.** A missing control is 
   - `src/rules/`: the rule engine, built on `ast-grep`. `schema.rs` defines the rule format, `engine.rs` runs it, `tests*.rs` are its unit tests.
   - `src/flow/`: the dataflow graph behind a rule's `flow:` clause. It answers where a value came from (`catalogue.rs`, `graph.rs`) and whether a guard dominates a sink (`guards.rs`). Python only.
   - `src/inspect/`: captures an MCP server's tools over Streamable HTTP or stdio into a snapshot file. Used by `bastyn inspect-server` and `scan --inspect-remote`; `scan` without `--inspect-remote` never connects to an MCP server.
+  - `src/watch/`: watch mode (`bastyn --watch <dir>`). Polls skill and instruction files, de-duplicates alerts, and delivers them to a reporter (`openclaw.rs`) with retries. `src/instruction_hazard.rs` holds the two instruction-file observations (BAS-SKILL-013, BAS-SKILL-014). The worker is re-spawned by a supervisor in `bastyn-cli/src/commands/watch.rs`, because the release profile uses `panic=abort`.
   - `src/mcp/`: MCP server configuration checks. `src/infra/`: Dockerfile and Compose checks. `src/cve/`: dependency manifests and vulnerability lookup (`--offline` skips the network).
   - `src/finding.rs`, `src/category.rs`, `src/compliance.rs`, `src/report.rs`: the report model and the framework categories findings map to.
   - `src/render/`: text, JSON and SARIF output.

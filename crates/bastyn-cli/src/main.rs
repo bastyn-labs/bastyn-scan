@@ -8,6 +8,7 @@ mod cli;
 mod commands;
 mod exit;
 mod progress;
+mod terminal;
 
 use std::io::Write as _;
 use std::process::ExitCode;
@@ -18,13 +19,23 @@ use crate::cli::{Cli, Command};
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    if let Err(error) = cli.validate() {
+        error.exit();
+    }
 
-    let result = match &cli.command {
-        Command::Scan(args) => {
+    let result = match (&cli.command, &cli.watch.watch) {
+        (Some(Command::Scan(args)), _) => {
             commands::scan::run(args, &cli.global).map(commands::scan::Outcome::exit_code)
         }
-        Command::ProjectId(args) => commands::project_id::run(args).map(|()| exit::CLEAN),
-        Command::InspectServer(args) => commands::inspect_server::run(args).map(|()| exit::CLEAN),
+        (Some(Command::ProjectId(args)), _) => {
+            commands::project_id::run(args).map(|()| exit::CLEAN)
+        }
+        (Some(Command::InspectServer(args)), _) => {
+            commands::inspect_server::run(args).map(|()| exit::CLEAN)
+        }
+        (None, Some(_)) => commands::watch::run(&cli.watch, &cli.global),
+        // `validate` refused this combination above.
+        (None, None) => Ok(exit::EXECUTION_ERROR),
     };
 
     match result {
