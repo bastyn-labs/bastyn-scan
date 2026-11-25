@@ -21,9 +21,6 @@ use crate::reporting::upload::{
     Reply, TransportError, authority, is_loopback_authority, reply_from, transport_error,
 };
 
-/// The largest request body sent, in bytes.
-const MAX_BODY_BYTES: usize = 1024 * 1024;
-
 /// Time allowed to connect, to send, and to receive the response head.
 const ATTEMPT_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -250,7 +247,7 @@ impl OpenClawReporter {
         if let (Some(id), Some(map)) = (&self.agent_id, value.as_object_mut()) {
             map.insert("agentId".to_owned(), json!(id));
         }
-        // Serialising a `Value` cannot fail; an empty body is refused below.
+        // Serialising a `Value` cannot fail.
         serde_json::to_vec(&value).unwrap_or_default()
     }
 }
@@ -278,11 +275,6 @@ fn validate_token(token: String) -> Result<Secret, OpenClawError> {
 impl Reporter for OpenClawReporter {
     fn deliver(&self, alert: &Alert) -> DeliverOutcome {
         let body = self.body(alert);
-        if body.is_empty() || body.len() >= MAX_BODY_BYTES {
-            return DeliverOutcome::Fatal {
-                reason: "the alert message is empty or too large".to_owned(),
-            };
-        }
         let key: String = alert
             .key
             .chars()
@@ -497,6 +489,25 @@ mod tests {
             );
         }
         assert!(OpenClawReporter::new(&url, "tok".into(), Some("my-agent_1.x".into())).is_ok());
+    }
+
+    #[test]
+    fn every_severity_is_named_in_the_message() {
+        for (severity, word) in [
+            (Severity::Low, "(low)"),
+            (Severity::Medium, "(medium)"),
+            (Severity::High, "(high)"),
+            (Severity::Critical, "(critical)"),
+        ] {
+            let (reporter, seen) = reporter_with_log(Ok(status(200)), None);
+            let alert = Alert {
+                severity,
+                ..alert()
+            };
+            assert_eq!(reporter.deliver(&alert), DeliverOutcome::Delivered);
+            let sent = String::from_utf8(seen.borrow()[0].0.clone()).unwrap();
+            assert!(sent.contains(word), "{word}: {sent}");
+        }
     }
 
     #[test]
