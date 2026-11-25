@@ -91,15 +91,13 @@ impl Endpoint {
 
 /// The authority part of a URL with its scheme removed: everything up to the
 /// first `/`, `?` or `#`.
-#[cfg(feature = "test-endpoint")]
-fn authority(rest: &str) -> &str {
+pub(crate) fn authority(rest: &str) -> &str {
     rest.find(['/', '?', '#']).map_or(rest, |end| &rest[..end])
 }
 
 /// Whether an authority is exactly a loopback host with an optional numeric
 /// port, and has no userinfo.
-#[cfg(feature = "test-endpoint")]
-fn is_loopback_authority(authority: &str) -> bool {
+pub(crate) fn is_loopback_authority(authority: &str) -> bool {
     let (host, port) = if let Some(rest) = authority.strip_prefix('[') {
         match rest.split_once(']') {
             Some((host, tail)) => (format!("[{host}]"), tail.strip_prefix(':')),
@@ -416,23 +414,30 @@ impl Transport for UreqTransport {
             .post(&self.url)
             .header("Content-Type", "application/json")
             .send(body)
-            .map_err(|error| match error {
-                ureq::Error::Timeout(_) => TransportError::Timeout,
-                ureq::Error::Io(ref io) if io.kind() == std::io::ErrorKind::TimedOut => {
-                    TransportError::Timeout
-                }
-                _ => TransportError::Network,
-            })?;
-        let retry_after = response
-            .headers()
-            .get("retry-after")
-            .and_then(|value| value.to_str().ok())
-            .and_then(parse_retry_after);
-        // The response body is dropped unread.
-        Ok(Reply {
-            status: response.status().as_u16(),
-            retry_after,
-        })
+            .map_err(|error| transport_error(&error))?;
+        Ok(reply_from(&response))
+    }
+}
+
+/// Maps a `ureq` failure to the coarse [`TransportError`].
+pub(crate) fn transport_error(error: &ureq::Error) -> TransportError {
+    match error {
+        ureq::Error::Timeout(_) => TransportError::Timeout,
+        ureq::Error::Io(io) if io.kind() == std::io::ErrorKind::TimedOut => TransportError::Timeout,
+        _ => TransportError::Network,
+    }
+}
+
+/// The status and `Retry-After` of a response. The body is left unread.
+pub(crate) fn reply_from(response: &ureq::http::Response<ureq::Body>) -> Reply {
+    let retry_after = response
+        .headers()
+        .get("retry-after")
+        .and_then(|value| value.to_str().ok())
+        .and_then(parse_retry_after);
+    Reply {
+        status: response.status().as_u16(),
+        retry_after,
     }
 }
 

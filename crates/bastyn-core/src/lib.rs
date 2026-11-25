@@ -14,6 +14,7 @@ pub mod cve;
 pub mod finding;
 pub mod infra;
 pub mod inspect;
+pub mod instruction_hazard;
 pub mod instructions;
 pub mod mcp;
 pub mod observe;
@@ -23,6 +24,7 @@ pub mod reporting;
 pub mod rules;
 pub mod scan;
 pub mod skill;
+pub mod watch;
 
 mod credential;
 mod dotenv;

@@ -2183,3 +2183,90 @@ why      = "A fetched page and an untraced parameter are built into a note by f-
 [[expect_none]]
 file = "clean/llm10_mixed_source_near_miss.py"
 why  = "An either-or choice between two literal queries, a parameterised query that binds a model reply and a parameter, and a prompt built only from module-level constants: none contains a model reply in a built string."
+
+# skills/ and instruction files -- text that tells the agent to delete
+# everything or to download an executable (BAS-SKILL-013, BAS-SKILL-014)
+
+[[expect]]
+file     = "vulnerable/skills/delete-everything/SKILL.md"
+line     = 8
+rule     = "BAS-SKILL-013"
+category = "LLM03"
+kind     = "observation"
+severity = "high"
+why      = "An imperative deletion whose object is the whole of ./."
+
+[[expect]]
+file     = "vulnerable/skills/delete-everything/SKILL.md"
+line     = 10
+rule     = "BAS-SKILL-013"
+category = "LLM03"
+kind     = "observation"
+severity = "high"
+why      = "rm -rf ~ in an instruction to clean up; a second match in the same file is its own finding."
+
+[[expect]]
+file     = "vulnerable/skills/delete-everything/SKILL.md"
+line     = 12
+rule     = "BAS-SKILL-013"
+category = "LLM03"
+kind     = "observation"
+severity = "high"
+why      = "An imperative wipe of the entire disk."
+
+[[expect]]
+file     = "vulnerable/skills/download-executable/SKILL.md"
+line     = 8
+rule     = "BAS-SKILL-014"
+category = "LLM04"
+kind     = "observation"
+severity = "high"
+why      = "An imperative download of setup.exe with no checksum or signature check."
+
+[[expect]]
+file     = "vulnerable/skills/download-executable/SKILL.md"
+line     = 10
+rule     = "BAS-SKILL-014"
+category = "LLM04"
+kind     = "observation"
+severity = "high"
+why      = "An imperative download of a bare .exe followed by running it; a second match in the same file is its own finding."
+
+[[expect]]
+file     = "vulnerable/instructions/AGENTS.md"
+line     = 5
+rule     = "BAS-SKILL-013"
+category = "LLM03"
+kind     = "observation"
+severity = "high"
+why      = "An instruction file that tells the agent to delete all the files on ./ when a build breaks."
+
+[[expect_none]]
+file = "clean/skills/scoped-cleanup/SKILL.md"
+why  = "Deletions narrowed to a sub-path or to files the skill created, a format of files rather than a disk, a tool described as able to delete, a refusal, a warning, and a table row of a blocked command."
+
+[[expect_none]]
+file = "clean/skills/checked-download/SKILL.md"
+why  = "An installer download followed by a checksum check, a warning against executables from email links, a build output path, a description of what users do, and a package-manager dependency fetch."
+
+[[expect_none]]
+file = "clean/instructions/AGENTS.md"
+why  = "A deletion narrowed to ./build, and a refusal to delete everything or download executables."
+
+[[expect]]
+file     = "vulnerable/skills/multi-line-hazards/SKILL.md"
+line     = 7
+rule     = "BAS-SKILL-013"
+category = "LLM03"
+kind     = "observation"
+severity = "high"
+why      = "A deletion of the whole of ./ on one line; the next line, a separate sentence, does not narrow it."
+
+[[expect]]
+file     = "vulnerable/skills/multi-line-hazards/SKILL.md"
+line     = 8
+rule     = "BAS-SKILL-014"
+category = "LLM04"
+kind     = "observation"
+severity = "high"
+why      = "A download of a bare .exe on the line after a deletion; a line break ends the sentence for both rules."

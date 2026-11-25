@@ -13,15 +13,89 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
     about,
     long_about = None,
     propagate_version = true,
+    args_conflicts_with_subcommands = true,
+    arg_required_else_help = true,
 )]
 pub(crate) struct Cli {
-    /// The subcommand to run.
+    /// The subcommand to run. Absent when `--watch` is given.
     #[command(subcommand)]
-    pub(crate) command: Command,
+    pub(crate) command: Option<Command>,
+
+    /// Options for watch mode, which runs instead of a subcommand.
+    #[command(flatten)]
+    pub(crate) watch: WatchArgs,
 
     /// Options shared by every subcommand.
     #[command(flatten)]
     pub(crate) global: GlobalArgs,
+}
+
+impl Cli {
+    /// Checks the combinations that clap's declarative rules cannot express.
+    ///
+    /// Watch mode has no machine-readable output, so `--format json` and
+    /// `--format sarif` with `--watch` are refused, and so is a command line
+    /// that names neither a subcommand nor `--watch`.
+    pub(crate) fn validate(&self) -> Result<(), clap::Error> {
+        let mut command = <Self as clap::CommandFactory>::command();
+        if self.command.is_none() && self.watch.watch.is_none() {
+            return Err(command.error(
+                clap::error::ErrorKind::MissingSubcommand,
+                "a subcommand or `--watch <PATH>` is required",
+            ));
+        }
+        if self.watch.watch.is_some() && self.global.format != Format::Text {
+            return Err(command.error(
+                clap::error::ErrorKind::ArgumentConflict,
+                "`--format` cannot be combined with `--watch`: watch output is text only",
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// Options for watch mode: `bastyn --watch <PATH>`.
+///
+/// Watch mode is offline. It never contacts an MCP server, never sends the
+/// anonymous scan summary and never looks up CVEs.
+#[derive(Debug, Args)]
+pub(crate) struct WatchArgs {
+    /// Watch a directory for new findings in skill and instruction files.
+    ///
+    /// Runs until stopped. Each new finding is printed in red and, with
+    /// `--reporter`, sent once to the reporter's endpoint. Watch mode is
+    /// offline: it never contacts an MCP server, never sends the anonymous
+    /// scan summary and never looks up CVEs. Output is text only.
+    #[arg(long, value_name = "PATH")]
+    pub(crate) watch: Option<PathBuf>,
+
+    /// Where to send each new finding, besides the terminal.
+    ///
+    /// The webhook token is read only from the environment variable
+    /// `BASTYN_OPENCLAW_TOKEN`, never from an argument.
+    #[arg(long, value_enum, requires_all = ["watch", "report_url"])]
+    pub(crate) reporter: Option<Reporter>,
+
+    /// The reporter's webhook URL, such as `http://127.0.0.1:18789/hooks/agent`.
+    ///
+    /// Plain http is accepted only for loopback hosts (127.0.0.1, localhost,
+    /// `[::1]`); any other host needs https.
+    #[arg(long, value_name = "URL", requires = "reporter")]
+    pub(crate) report_url: Option<String>,
+
+    /// Agent to address in the webhook message (`agentId`).
+    ///
+    /// Optional. Set it when the gateway has no default agent.
+    #[arg(long, value_name = "ID", requires = "reporter")]
+    pub(crate) openclaw_agent_id: Option<String>,
+}
+
+/// Where watch mode sends findings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[value(rename_all = "lower")]
+pub(crate) enum Reporter {
+    /// An `OpenClaw` webhook.
+    Openclaw,
 }
 
 /// Options that apply to every subcommand.
@@ -319,16 +393,14 @@ pub(crate) struct ScanArgs {
 mod tests {
     use clap::{CommandFactory as _, Parser as _};
 
-    use super::{Cli, Command, GroupBy, ProjectIdArgs, ScanArgs};
+    use super::{Cli, Command, GroupBy, ProjectIdArgs, Reporter, ScanArgs};
     use bastyn_core::Framework;
 
     /// The `scan` arguments of a parsed command line.
     fn scan_args(cli: &Cli) -> &ScanArgs {
         match &cli.command {
-            Command::Scan(args) => args,
-            Command::ProjectId(_) | Command::InspectServer(_) => {
-                unreachable!("these tests parse `scan`")
-            }
+            Some(Command::Scan(args)) => args,
+            _ => unreachable!("these tests parse `scan`"),
         }
     }
 
@@ -437,17 +509,104 @@ mod tests {
     #[test]
     fn project_id_arguments_parse() {
         let cli = Cli::parse_from(["bastyn", "project-id"]);
-        let Command::ProjectId(ProjectIdArgs { path, explain }) = &cli.command else {
+        let Some(Command::ProjectId(ProjectIdArgs { path, explain })) = &cli.command else {
             unreachable!("parsed `project-id`");
         };
         assert_eq!(path.as_os_str(), ".");
         assert!(!explain);
 
         let cli = Cli::parse_from(["bastyn", "project-id", "some/dir", "--explain"]);
-        let Command::ProjectId(ProjectIdArgs { path, explain }) = &cli.command else {
+        let Some(Command::ProjectId(ProjectIdArgs { path, explain })) = &cli.command else {
             unreachable!("parsed `project-id`");
         };
         assert_eq!(path.as_os_str(), "some/dir");
         assert!(explain);
+    }
+
+    /// The watch flags parse, and a plain `scan` is untouched by them.
+    #[test]
+    fn watch_arguments_parse() {
+        let cli = Cli::parse_from([
+            "bastyn",
+            "--watch",
+            ".",
+            "--reporter",
+            "openclaw",
+            "--report-url",
+            "http://127.0.0.1:18789/hooks/agent",
+            "--openclaw-agent-id",
+            "main",
+        ]);
+        assert!(cli.command.is_none());
+        assert_eq!(cli.watch.watch.as_deref(), Some(std::path::Path::new(".")));
+        assert_eq!(cli.watch.reporter, Some(Reporter::Openclaw));
+        assert_eq!(cli.watch.openclaw_agent_id.as_deref(), Some("main"));
+        cli.validate().unwrap();
+    }
+
+    /// Each reporter flag needs the flags it depends on.
+    #[test]
+    fn watch_flag_dependencies_are_enforced() {
+        for args in [
+            vec![
+                "bastyn",
+                "--reporter",
+                "openclaw",
+                "--report-url",
+                "http://127.0.0.1/x",
+            ],
+            vec!["bastyn", "--watch", ".", "--reporter", "openclaw"],
+            vec![
+                "bastyn",
+                "--watch",
+                ".",
+                "--report-url",
+                "http://127.0.0.1/x",
+            ],
+            vec!["bastyn", "--watch", ".", "--openclaw-agent-id", "main"],
+            vec![
+                "bastyn",
+                "--watch",
+                ".",
+                "--reporter",
+                "slack",
+                "--report-url",
+                "x",
+            ],
+        ] {
+            assert!(Cli::try_parse_from(&args).is_err(), "{args:?}");
+        }
+    }
+
+    /// Bare `bastyn` and `--watch` with a machine format are usage errors.
+    #[test]
+    fn bare_and_machine_format_watch_are_refused() {
+        assert!(Cli::try_parse_from(["bastyn"]).is_err());
+        let cli = Cli::parse_from(["bastyn", "--quiet"]);
+        assert!(cli.validate().is_err());
+        for format in ["json", "sarif"] {
+            let cli = Cli::parse_from(["bastyn", "--watch", ".", "--format", format]);
+            let error = cli.validate().unwrap_err().to_string();
+            assert!(error.contains("text only"), "{error}");
+        }
+        Cli::parse_from(["bastyn", "--watch", ".", "--format", "text"])
+            .validate()
+            .unwrap();
+    }
+
+    /// The watch flags cannot be mixed with a subcommand.
+    #[test]
+    fn watch_conflicts_with_subcommands() {
+        assert!(Cli::try_parse_from(["bastyn", "--watch", ".", "scan"]).is_err());
+    }
+
+    /// The help says what watch mode does not do and where the token comes from.
+    #[test]
+    fn the_watch_help_states_its_limits() {
+        let rendered = Cli::command().render_long_help().to_string();
+        let help = rendered.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(help.contains("never contacts an MCP server"), "{rendered}");
+        assert!(help.contains("BASTYN_OPENCLAW_TOKEN"), "{rendered}");
+        assert!(help.contains("loopback"), "{rendered}");
     }
 }

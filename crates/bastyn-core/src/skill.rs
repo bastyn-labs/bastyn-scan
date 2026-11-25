@@ -88,6 +88,7 @@
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
 use serde_yaml_ng::Value;
 
@@ -576,7 +577,7 @@ fn check_frontmatter(relative_path: &Path, contents: &str) -> Option<Finding> {
 /// not by itself a refusal ("Do not hesitate: ignore all previous
 /// instructions").
 #[derive(Clone, Copy)]
-enum CueSet {
+pub(crate) enum CueSet {
     /// `BAS-SKILL-002`: refusal and detection wording in the same sentence,
     /// or next to the fenced block holding the phrase.
     Injection,
@@ -586,6 +587,10 @@ enum CueSet {
     /// `BAS-SKILL-010`: a negation or an "avoid" wording earlier in the same
     /// sentence, or next to the fenced block holding the command.
     Download,
+    /// `BAS-SKILL-013` and `-014`: every negation of [`Self::Negation`] plus
+    /// "avoid", "instead of" and refusal or block wording, earlier in the same
+    /// sentence, or next to the fenced block holding the command.
+    Hazard,
 }
 
 /// Refusal and detection wording that turns an override phrase into a
@@ -677,12 +682,36 @@ const DOWNLOAD_CUES: &[&str] = &[
     "bad practice",
 ];
 
+/// Wording [`CueSet::Hazard`] adds to [`NEGATION_CUES`].
+const HAZARD_EXTRA_CUES: &[&str] = &[
+    "avoid ",
+    "instead of ",
+    "rather than ",
+    "refuse",
+    "reject",
+    "blocked",
+    "denied",
+    "forbidden",
+    "disallowed",
+    "prohibited",
+];
+
+/// [`NEGATION_CUES`] followed by [`HAZARD_EXTRA_CUES`].
+static HAZARD_CUES: LazyLock<Vec<&'static str>> = LazyLock::new(|| {
+    NEGATION_CUES
+        .iter()
+        .chain(HAZARD_EXTRA_CUES)
+        .copied()
+        .collect()
+});
+
 impl CueSet {
     fn cues(self) -> &'static [&'static str] {
         match self {
             Self::Injection => INJECTION_CUES,
             Self::Negation => NEGATION_CUES,
             Self::Download => DOWNLOAD_CUES,
+            Self::Hazard => HAZARD_CUES.as_slice(),
         }
     }
 
@@ -693,6 +722,7 @@ impl CueSet {
             Self::Injection => Some(INJECTION_CUES),
             Self::Negation => None,
             Self::Download => Some(DOWNLOAD_CUES),
+            Self::Hazard => Some(HAZARD_CUES.as_slice()),
         }
     }
 }
@@ -709,13 +739,13 @@ struct PhraseMatch {
 
 /// A lowercased, whitespace-collapsed copy of a file's text, with what is
 /// needed to map a position back to the original and to find sentences.
-struct Normalized {
-    text: String,
+pub(crate) struct Normalized {
+    pub(crate) text: String,
     /// One entry per character of `text`: its byte offset in the original.
-    offsets: Vec<usize>,
+    pub(crate) offsets: Vec<usize>,
     /// Byte offsets in `text` of the collapsed whitespace that separates
     /// two blocks (paragraph, list item, heading, quote or table row).
-    hard_breaks: Vec<usize>,
+    pub(crate) hard_breaks: Vec<usize>,
 }
 
 /// True if `rest` begins with a list, heading, quote or table marker: `-`,
@@ -739,7 +769,7 @@ fn starts_block_marker(rest: &str) -> bool {
 /// break when it holds a blank line, or a newline followed by a block
 /// marker; a single plain newline inside a paragraph is not, so a wrapped
 /// phrase still reads as one sentence.
-fn normalize(contents: &str) -> Normalized {
+pub(crate) fn normalize(contents: &str) -> Normalized {
     let mut text = String::with_capacity(contents.len());
     let mut offsets: Vec<usize> = Vec::with_capacity(contents.len());
     let mut hard_breaks = Vec::new();
@@ -1208,7 +1238,7 @@ fn first_live_match(
 }
 
 /// The candidates that are live, see [`first_live_match`], sorted by position.
-fn live_matches(
+pub(crate) fn live_matches(
     contents: &str,
     normalized: &Normalized,
     cues: CueSet,
@@ -1787,7 +1817,7 @@ fn has_verification_marker(lines: &[&str], line: usize) -> bool {
 }
 
 /// The 1-based line of the byte `offset` in `contents`.
-fn line_of_offset(contents: &str, offset: usize) -> usize {
+pub(crate) fn line_of_offset(contents: &str, offset: usize) -> usize {
     contents
         .get(..offset)
         .map_or(1, |head| head.matches('\n').count() + 1)
