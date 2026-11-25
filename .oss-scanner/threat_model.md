@@ -4,7 +4,7 @@
 
 `bastyn` is a static scanner for AI-agent repositories, written in Rust. `bastyn scan <path>` reads a source tree and reports security findings. It reads Python, TypeScript and JavaScript source (parsed with tree-sitter through `ast-grep`), MCP server configuration, `SKILL.md` skill files, Dockerfiles, Compose files, `.env` files and dependency manifests and lockfiles (npm, pnpm, yarn, poetry, uv, `requirements`). It prints a report as text, JSON or SARIF and exits with 0 (nothing at or above `--fail-on`), 1 (findings) or 2 (scan could not run).
 
-It also has three optional network features. All of them are off by default or explicit:
+It also has `bastyn --watch <dir>`, a long-running mode that polls skill and instruction files and reports each new finding once, on the terminal and optionally to a webhook. And it has three optional network features. All of them are off by default or explicit:
 
 - Dependency lookup against OSV.dev (`--offline` turns it off).
 - An anonymous, counts-only scan summary posted to a fixed endpoint after a scan (off with `--offline`, `--no-reporting` or `DO_NOT_TRACK`).
@@ -20,10 +20,11 @@ Untrusted:
 - MCP server replies during `--inspect-remote` and `inspect-server`: JSON-RPC bodies, Server-Sent Events, tool names and descriptions. Server URLs that come from a scanned config file are untrusted too.
 - OSV.dev responses and the endpoint's replies to the summary upload.
 - Snapshot files of MCP tools that were saved earlier and come from elsewhere.
+- In watch mode: the files under the watched directory, which can change at any moment while the watcher runs, and the webhook's replies (status codes, `Retry-After`).
 
 Trusted:
 
-- The user's machine, command-line flags, environment variables and files the user names on the command line (for example `--exclude`, `--save-snapshots`, `inspect-server --config` with `--allow-spawn`).
+- The user's machine, command-line flags, environment variables (including `BASTYN_OPENCLAW_TOKEN`, the webhook token) and files the user names on the command line (for example `--exclude`, `--save-snapshots`, `inspect-server --config` with `--allow-spawn`).
 - The compiled-in rules in `crates/bastyn-core/rules/` and the compiled-in report endpoint.
 
 Starting the command of an MCP config entry is the user's decision, and `inspect-server` refuses it without `--allow-spawn`. A command or URL that is only *found in a scanned file* is never run or contacted by a plain `scan`; for URLs the address guard in `inspect/guard.rs` must refuse non-http(s) schemes and cloud-metadata or link-local addresses.
@@ -40,7 +41,8 @@ Look hardest at code that parses or follows untrusted input:
 6. `src/reporting/*`: what leaves the machine. It must be limited to the allowlist in `summary.rs`.
 7. `src/render/*`: JSON and SARIF output built from scanned text.
 8. `crates/bastyn-cli/src/`: argument handling and file output paths.
-9. `install.sh`, `action.yml` and `scripts/`: delivery of the binary. Less critical, still in scope.
+9. Watch mode: `crates/bastyn-core/src/watch/` (`scan.rs` file selection and fingerprints, `alert.rs` sanitising, `openclaw.rs` the webhook client and URL rules, `seen.rs` the on-disk record of delivered alerts) and `crates/bastyn-cli/src/commands/watch.rs` (the supervisor and worker processes).
+10. `install.sh`, `action.yml` and `scripts/`: delivery of the binary. Less critical, still in scope.
 
 Less important: the rule YAML text, `docs/`, and the placeholder crate `crates/bastyn-cli-placeholder/`.
 
@@ -52,14 +54,16 @@ Less important: the rule YAML text, `docs/`, and the placeholder crate `crates/b
 - **Deterministic output.** Reports are byte-identical across runs. Ordering must not depend on the filesystem or thread timing.
 - **No secrets in reports or uploads.** A finding may quote the line it points at, but nothing else should copy a secret value out of the scanned tree. The summary upload carries only the counts and fields allowed by the hard allowlist in `reporting/summary.rs`: no paths, repository names, code, secret values or project identity in the clear.
 - **Network is bounded and opt-out is honoured.** Nothing from the scanned tree can change the report endpoint, selects a hash algorithm, or enables a network call. `--offline` and `DO_NOT_TRACK` must stop every network call. Remote MCP capture refuses unsafe addresses and obeys the body size, time and page limits.
+- **Watch mode keeps what it sends and where it sends it narrow.** A webhook message carries only the alert fields: rule id, severity, title, relative path, line, and a sanitised snippet limited to printable ASCII and 200 characters. The file's own text is never sent. The token comes only from `BASTYN_OPENCLAW_TOKEN`, never from an argument, a watched file or a webhook reply, and must not appear in output, errors or the state file. Plain `http` is accepted only for loopback hosts and everything else needs `https`; redirects are not followed, so a reply cannot move the token to another host. Watch mode never contacts an MCP server, never uploads the scan summary and never does CVE lookup.
+- **Watch mode survives hostile and changing files.** A symlink or a file over the size limit in the watched tree must not make it read outside the root or use unbounded memory. A half-written or rapidly changing file must not crash it or make it alert twice for one finding. A panic in the worker must end only the worker: the supervisor restarts it with a growing pause and must not loop hot. The delivered-alert record in the per-user state directory is capped, is written only there, and a corrupt or oversized one must be ignored, not trusted.
 - **Output formats stay valid.** JSON and SARIF output must stay well-formed whatever text came from the scanned repository (control characters, very long strings, invalid UTF-8).
 
 ## How to rate severity
 
 - **Critical:** a scanned repository or MCP server can run code on the user's machine, or read or write an arbitrary file outside the scan root, or make the scanner send file contents or secrets off the machine.
-- **High:** a scanned repository can make the scanner contact an address the guard should refuse (for example a cloud-metadata endpoint), leak a secret value into the upload or into a field that is not the finding's own snippet, or write outside the report, snapshot or state paths. Also a crash or memory exhaustion that cannot be avoided with a flag and that an attacker can trigger from a pull request in CI.
+- **High:** in watch mode, a watched file or a webhook reply that makes the token or file text leave the machine, sends it to a host other than the configured one, or sends it over plain `http` to a non-loopback host. A scanned repository can make the scanner contact an address the guard should refuse (for example a cloud-metadata endpoint), leak a secret value into the upload or into a field that is not the finding's own snippet, or write outside the report, snapshot or state paths. Also a crash or memory exhaustion that cannot be avoided with a flag and that an attacker can trigger from a pull request in CI.
 - **Medium:** a crash (panic or stack overflow), hang or unbounded memory on a crafted file; catastrophic regex backtracking; a skipped-file path that hides findings *without* telling the report (the report must name every file it did not scan).
-- **Low:** non-deterministic output, an invalid SARIF or JSON document, a wrong exit code, a terminal escape sequence from scanned text printed unescaped.
+- **Low:** in watch mode, an alert that repeats or is lost across a restart, or an alert field that carries control characters to the terminal. Also non-deterministic output, an invalid SARIF or JSON document, a wrong exit code, a terminal escape sequence from scanned text printed unescaped.
 - **Not a finding:** the scanner misses a vulnerability or returns a false positive (precision and recall are tracked by a separate gate, not as security issues); a rule that flags test code as an observation; the user running `inspect-server` (with `--allow-spawn`) against a server they chose; dependencies with advisories that the code cannot reach.
 
 ## How to exercise it
@@ -67,6 +71,7 @@ Less important: the rule YAML text, `docs/`, and the placeholder crate `crates/b
 - Build: `cargo build --workspace --all-features --locked`; the binary is `target/debug/bastyn`.
 - Scan a tree: `target/debug/bastyn scan <path> --offline --format json`. Always use `--offline` so no network is needed.
 - Tests: `cargo test --workspace --all-features --locked --offline`. They pass with no network.
+- Watch mode: run `target/debug/bastyn --watch <dir>` on a temp directory, with `--reporter openclaw --report-url http://127.0.0.1:<port>/hook` and a local listener to see what is sent. Set `BASTYN_OPENCLAW_TOKEN` to a dummy value. It runs until stopped, so give it a timeout. `crates/bastyn-cli/tests/watch.rs` shows how the tests drive it.
 - Targets worth fuzzing by hand: a tree with symlink loops and links that point outside the root; very large and very deeply nested `.py`, `.ts`, `.json`, `.toml` and `.yaml` files; lockfiles with odd versions and URLs; `SKILL.md` with odd Markdown and front matter; a `.bastynignore` that tries to hide files.
 
 ## Writing a reproducer
