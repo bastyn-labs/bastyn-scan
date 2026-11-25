@@ -229,7 +229,7 @@ mod tests {
         let prints = FsSource.snapshot(dir.path()).unwrap();
         let kinds: Vec<_> = prints
             .iter()
-            .map(|(p, (_, k))| (p.to_string_lossy().into_owned(), *k))
+            .map(|(p, (_, k))| (p.to_string_lossy().replace('\\', "/"), *k))
             .collect();
         assert_eq!(
             kinds,
