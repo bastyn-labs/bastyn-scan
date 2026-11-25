@@ -709,3 +709,62 @@ fn a_stop_signal_is_passed_on_and_not_restarted() {
     assert_eq!(status.code(), Some(143));
     assert!(!running.err().contains("restarting"));
 }
+
+#[cfg(unix)]
+/// Starts a watch whose stdout reader is already gone, keeps adding hazardous
+/// skills, and returns how the supervisor ended.
+fn exit_status_when_stdout_is_closed(url: Option<&str>) -> std::process::ExitStatus {
+    let dir = tree(&[]);
+    let home = TempDir::new().unwrap();
+    let mut command = command(home.path());
+    command.arg("--watch").arg(dir.path());
+    if let Some(url) = url {
+        command
+            .args(["--reporter", "openclaw", "--report-url", url])
+            .env("BASTYN_OPENCLAW_TOKEN", TOKEN);
+    }
+    let mut child = command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    drop(child.stdout.take());
+
+    let start = Instant::now();
+    let mut added = 0;
+    loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            return status;
+        }
+        let timed_out = start.elapsed() > TIMEOUT;
+        if timed_out {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        assert!(
+            !timed_out,
+            "the watch did not end after its output was closed"
+        );
+        // Each skill is a new alert, so the worker keeps trying to print.
+        let skill = dir.path().join(format!("skills/s{added}/SKILL.md"));
+        fs::create_dir_all(skill.parent().unwrap()).unwrap();
+        fs::write(&skill, DELETE_SKILL).unwrap();
+        added += 1;
+        thread::sleep(Duration::from_millis(150));
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn watching_ends_cleanly_when_the_output_is_closed() {
+    let status = exit_status_when_stdout_is_closed(None);
+    assert_eq!(status.code(), Some(0));
+}
+
+#[cfg(unix)]
+#[test]
+fn watching_with_a_reporter_also_ends_cleanly_when_the_output_is_closed() {
+    let hook = Webhook::start(&[200]);
+    let status = exit_status_when_stdout_is_closed(Some(&hook.url()));
+    assert_eq!(status.code(), Some(0));
+}
